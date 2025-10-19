@@ -40,7 +40,23 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config_path = args.config.as_deref().unwrap_or("multishiva.yml");
-    let config = Config::from_file(config_path)?;
+    let config = Config::from_file(config_path).map_err(|e| {
+        if config_path == "multishiva.yml" && !std::path::Path::new(config_path).exists() {
+            anyhow::anyhow!(
+                "Configuration file not found: {}\n\n\
+                 To get started:\n\
+                 1. Copy the example config: cp multishiva.yml.example multishiva.yml\n\
+                 2. Edit the config file to match your setup\n\
+                 3. For agent mode: cp multishiva-agent.yml.example multishiva-agent.yml\n\n\
+                 Or specify a custom config: multishiva --config /path/to/config.yml\n\n\
+                 Original error: {}",
+                config_path,
+                e
+            )
+        } else {
+            e
+        }
+    })?;
     config.validate()?;
 
     tracing::info!("Configuration loaded from: {}", config_path);

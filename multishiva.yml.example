@@ -1,0 +1,30 @@
+# MultiShiva Configuration Example
+# This is a host configuration - the machine that others connect to
+
+version: 1
+self_name: "host"
+mode: host
+port: 53421
+
+# TLS Pre-Shared Key - MUST be the same on all machines
+tls:
+  psk: "change-this-to-a-secure-random-string"
+
+# Define which machines are on which edges of your screen
+# Supported edges: right, left, top, bottom
+edges:
+  right: "agent1"  # Machine to the right of this one
+  # left: "agent2"
+  # top: "agent3"
+  # bottom: "agent4"
+
+# Optional: Hotkey configuration
+hotkeys:
+  focus_return: "Ctrl+Alt+H"  # Return focus to host
+  kill_switch: "Ctrl+Alt+K"   # Emergency stop
+
+# Optional: Behavior tuning
+behavior:
+  edge_threshold_px: 10      # Distance from edge to trigger switch (pixels)
+  friction_ms: 100           # Delay before switching (milliseconds)
+  reconnect_delay_ms: 5000   # Time to wait before reconnecting (milliseconds)
