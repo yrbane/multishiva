@@ -380,9 +380,7 @@ impl Config {
         // Validate mode-specific requirements
         match self.mode {
             ConfigMode::Agent => {
-                if self.host_address.is_none() {
-                    anyhow::bail!("host_address is required for agent mode");
-                }
+                // host_address is now optional - if not provided, mDNS auto-discovery will be used
             }
             ConfigMode::Host => {
                 // Host mode doesn't require additional validation
@@ -555,6 +553,7 @@ mod tests {
 
     #[test]
     fn test_config_validate_agent_without_host() {
+        // Agent mode without host_address should now be valid (mDNS auto-discovery)
         let config = Config {
             self_name: "test".to_string(),
             tls: TlsConfig {
@@ -564,7 +563,7 @@ mod tests {
             host_address: None,
             ..Default::default()
         };
-        assert!(config.validate().is_err());
+        assert!(config.validate().is_ok());
     }
 
     #[test]
