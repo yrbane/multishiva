@@ -107,6 +107,7 @@ async fn test_integration_config_to_topology() {
         self_name: "host".to_string(),
         mode: ConfigMode::Host,
         port: 53421,
+        host_address: None,
         tls: multishiva::core::config::TlsConfig {
             psk: "test-psk".to_string(),
         },
@@ -345,6 +346,7 @@ async fn test_integration_complete_workflow() {
         self_name: "host".to_string(),
         mode: ConfigMode::Host,
         port: 53421,
+        host_address: None,
         tls: multishiva::core::config::TlsConfig {
             psk: "integration-test".to_string(),
         },

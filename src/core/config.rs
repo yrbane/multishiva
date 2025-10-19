@@ -7,6 +7,7 @@ pub struct Config {
     pub self_name: String,
     pub mode: ConfigMode,
     pub port: u16,
+    pub host_address: Option<String>, // For agent mode: address of host to connect to
     pub tls: TlsConfig,
     pub edges: HashMap<String, String>,
     pub hotkeys: Option<Hotkeys>,
@@ -44,6 +45,7 @@ impl Default for Config {
             self_name: "multishiva".to_string(),
             mode: ConfigMode::Host,
             port: 53421,
+            host_address: None,
             tls: TlsConfig { psk: String::new() },
             edges: HashMap::new(),
             hotkeys: None,

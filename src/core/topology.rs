@@ -12,7 +12,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Edge {
     Right,
     Left,
