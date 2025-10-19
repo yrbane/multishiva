@@ -13,6 +13,10 @@ categories = ["network-programming", "gui"]
 name = "multishiva"
 path = "src/lib.rs"
 
+[features]
+default = []
+gui = []  # GUI support via Tauri (coming in v1.0)
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }
