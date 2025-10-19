@@ -42,19 +42,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Host and agent modes
   - Simulation mode flag
   - Configuration file support
-- **Comprehensive Testing**: 105 tests covering all modules
-  - Unit tests for each module
-  - Integration tests for complete workflows
-  - Simulation mode tests
-  - Network communication tests
+  - Environment variable support (MULTISHIVA_MODE, MULTISHIVA_CONFIG, etc.)
+  - Argument validation with conflict detection
+  - GUI stub for future Tauri integration
+- **Comprehensive Testing**: 101 tests covering all modules
+  - 17 library tests (config, events, focus, network, etc.)
+  - 12 CLI tests (validation, env vars, conflicts)
+  - 10 integration tests (end-to-end workflows)
+  - 9 network tests (host-agent communication)
+  - 15 simulation tests (virtual machines, latency)
+  - 11 topology tests (edge detection, positioning)
+  - 8 config tests (YAML parsing, validation)
+  - 8 event tests (serialization, types)
+  - 8 focus tests (transfer, history)
+  - 3 security tests (TLS, PSK authentication)
 
 ### Technical Details
 - Built with Rust 2021 edition
 - Async runtime using Tokio
 - TDD (Test-Driven Development) methodology
-- CI/CD with GitHub Actions
-- Pre-commit hooks for code quality
+- CI/CD with GitHub Actions (multi-OS testing + release builds)
+- Pre-commit hooks for code quality (rustfmt + clippy)
+- Code coverage >80% with tarpaulin
 - Cross-platform support (Linux, macOS, Windows)
+- Feature flags for optional GUI support
 
 ### Documentation
 - Comprehensive README with quick start guide
