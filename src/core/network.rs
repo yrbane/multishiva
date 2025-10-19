@@ -3,10 +3,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{sleep, Duration};
 
 use crate::core::events::Event;
+use crate::core::fingerprint::{Fingerprint, FingerprintStore, FingerprintVerification};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -19,11 +20,17 @@ pub struct Network {
     connection_count: Arc<AtomicUsize>,
     event_tx: Arc<RwLock<Option<mpsc::Sender<Event>>>>,
     event_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
+    fingerprint_store: Arc<Mutex<FingerprintStore>>,
 }
 
 impl Network {
     pub fn new(psk: String) -> Self {
         let (tx, rx) = mpsc::channel(100);
+        let fingerprint_store = FingerprintStore::load_default().unwrap_or_else(|e| {
+            tracing::warn!("Could not load fingerprint store: {}. Creating new one.", e);
+            FingerprintStore::new(FingerprintStore::default_path()).unwrap()
+        });
+
         Self {
             psk,
             running: Arc::new(AtomicBool::new(false)),
@@ -31,6 +38,7 @@ impl Network {
             connection_count: Arc::new(AtomicUsize::new(0)),
             event_tx: Arc::new(RwLock::new(Some(tx))),
             event_rx: Arc::new(RwLock::new(Some(rx))),
+            fingerprint_store: Arc::new(Mutex::new(fingerprint_store)),
         }
     }
 
@@ -88,9 +96,34 @@ impl Network {
             .context("Connection timeout")?
             .context("Failed to connect to host")?;
 
-        // Perform PSK handshake
-        if let Err(e) = perform_psk_handshake(&mut stream, &self.psk, false).await {
-            return Err(e).context("PSK handshake failed");
+        // Perform PSK handshake and get machine name
+        let machine_name = perform_psk_handshake(&mut stream, &self.psk, false)
+            .await
+            .context("PSK handshake failed")?;
+
+        // Verify fingerprint
+        let psk_fingerprint = Fingerprint::from_cert_data(&machine_name, self.psk.as_bytes());
+        let mut store = self.fingerprint_store.lock().await;
+
+        match store.verify_or_save(&machine_name, psk_fingerprint.hash())? {
+            FingerprintVerification::Verified => {
+                tracing::info!("✓ Fingerprint verified for {}", machine_name);
+            }
+            FingerprintVerification::FirstConnection => {
+                tracing::warn!("First connection to {}. Fingerprint saved.", machine_name);
+            }
+            FingerprintVerification::Mismatch { stored, received } => {
+                tracing::error!(
+                    "⚠️  SECURITY WARNING: Fingerprint mismatch for {}!\n\
+                     Stored:   {}\n\
+                     Received: {}\n\
+                     This could indicate a Man-in-the-Middle attack!",
+                    machine_name,
+                    stored,
+                    received
+                );
+                anyhow::bail!("Fingerprint mismatch - possible MITM attack");
+            }
         }
 
         self.connected.store(true, Ordering::SeqCst);
@@ -147,10 +180,16 @@ impl Network {
     }
 }
 
-async fn perform_psk_handshake(stream: &mut TcpStream, psk: &str, is_server: bool) -> Result<()> {
+async fn perform_psk_handshake(
+    stream: &mut TcpStream,
+    psk: &str,
+    is_server: bool,
+) -> Result<String> {
+    let psk_hash = compute_psk_hash(psk);
+
     if is_server {
-        // Server: receive PSK hash and verify
-        let mut buf = vec![0u8; 128];
+        // Server: receive PSK hash and machine name
+        let mut buf = vec![0u8; 256];
         let n = stream.read(&mut buf).await?;
 
         if n < PSK_MAGIC.len() {
@@ -161,19 +200,38 @@ async fn perform_psk_handshake(stream: &mut TcpStream, psk: &str, is_server: boo
             anyhow::bail!("Invalid PSK magic");
         }
 
-        let received_hash = &buf[PSK_MAGIC.len()..n];
-        let expected_hash = compute_psk_hash(psk);
+        let data = &buf[PSK_MAGIC.len()..n];
+        // Parse: machine_name\0psk_hash
+        let parts: Vec<&[u8]> = data.splitn(2, |&b| b == 0).collect();
 
-        if received_hash != expected_hash.as_bytes() {
+        if parts.len() != 2 {
+            anyhow::bail!("Invalid handshake format");
+        }
+
+        let machine_name = std::str::from_utf8(parts[0])
+            .context("Invalid machine name")?
+            .to_string();
+        let received_hash = std::str::from_utf8(parts[1]).context("Invalid PSK hash")?;
+
+        if received_hash != psk_hash {
             anyhow::bail!("PSK mismatch");
         }
 
         // Send acknowledgment
         stream.write_all(b"OK").await?;
+
+        Ok(machine_name)
     } else {
-        // Client: send PSK hash
+        // Client: send machine name and PSK hash
+        let machine_name = hostname::get()
+            .ok()
+            .and_then(|h| h.into_string().ok())
+            .unwrap_or_else(|| "unknown".to_string());
+
         let mut handshake = PSK_MAGIC.to_vec();
-        handshake.extend_from_slice(compute_psk_hash(psk).as_bytes());
+        handshake.extend_from_slice(machine_name.as_bytes());
+        handshake.push(0); // Null separator
+        handshake.extend_from_slice(psk_hash.as_bytes());
 
         stream.write_all(&handshake).await?;
 
@@ -184,29 +242,35 @@ async fn perform_psk_handshake(stream: &mut TcpStream, psk: &str, is_server: boo
         if n != 2 || &buf != b"OK" {
             anyhow::bail!("PSK handshake not acknowledged");
         }
-    }
 
-    Ok(())
+        Ok(machine_name)
+    }
 }
 
 fn compute_psk_hash(psk: &str) -> String {
-    // Simple hash for now - in production use proper crypto
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    // Use SHA-256 for cryptographically secure hashing
+    use sha2::{Digest, Sha256};
 
-    let mut hasher = DefaultHasher::new();
-    psk.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(psk.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
 }
 
 async fn handle_client(mut stream: TcpStream, psk: String) -> Result<()> {
-    // Perform PSK handshake
-    if let Err(e) = perform_psk_handshake(&mut stream, &psk, true).await {
-        tracing::warn!("PSK handshake failed: {}", e);
-        return Err(e);
-    }
+    // Perform PSK handshake and get machine name
+    let machine_name = match perform_psk_handshake(&mut stream, &psk, true).await {
+        Ok(name) => name,
+        Err(e) => {
+            tracing::warn!("PSK handshake failed: {}", e);
+            return Err(e);
+        }
+    };
 
-    tracing::info!("Client authenticated successfully");
+    tracing::info!("Client {} authenticated successfully", machine_name);
+
+    // Note: fingerprint verification would happen here in a full implementation
+    // For now, we just log the successful authentication
 
     // Keep connection alive and handle events
     loop {

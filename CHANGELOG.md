@@ -5,6 +5,37 @@ All notable changes to MultiShiva will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-10-19
+
+### Added
+- **TLS Fingerprint Verification**: MITM attack detection
+  - SHA-256 fingerprint calculation for PSK authentication
+  - Persistent fingerprint storage in `~/.config/multishiva/fingerprints.json`
+  - Automatic verification on each connection
+  - Security warnings on fingerprint mismatch
+  - First-connection fingerprint saving
+- **Enhanced Network Security**:
+  - Replaced DefaultHasher with cryptographically secure SHA-256
+  - Machine name exchange during handshake
+  - Fingerprint module with complete test coverage (14 tests)
+- **Dependencies**:
+  - Added `sha2` for secure hashing
+  - Added `hex` for encoding
+  - Added `chrono` for timestamps
+  - Added `dirs` for config directory management
+  - Added `hostname` for machine identification
+  - Added `serde_json` for fingerprint persistence
+
+### Changed
+- Network handshake now includes machine name
+- PSK hash computation uses SHA-256 instead of DefaultHasher
+- Network module automatically loads and verifies fingerprints
+
+### Security
+- Protection against Man-in-the-Middle (MITM) attacks
+- Cryptographically secure PSK hashing
+- Fingerprint persistence and verification
+
 ## [0.1.0] - 2025-01-09
 
 ### Added
