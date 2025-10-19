@@ -247,14 +247,14 @@ Consultez [IDEA.md](IDEA.md) pour le concept complet et les spécifications dét
 
 | Version | État | Fonctionnalités                       |
 |---------|------|---------------------------------------|
-| v0.1    | ✅   | Config, CLI, topologie, réseau, focus, input, simulation - **105 tests** |
-| v0.2    | 📋   | Amélioration input handling, stabilité réseau |
-| v0.3    | 📋   | Clipboard sync, drag & drop          |
-| v1.0    | 📋   | Interface Tauri complète              |
-| v1.2    | 📋   | Auto-découverte mDNS                  |
-| v1.3    | 📋   | Multi-écrans avancé par machine       |
-| v1.4    | 📋   | Profils de configuration multiples    |
-| v1.5    | 💡   | Application mobile compagnon          |
+| v0.1    | ✅   | Config, CLI, topologie, réseau, focus, input, simulation - **30 tests** |
+| v0.2    | ✅   | TLS fingerprint, permissions système - **34 tests** |
+| v0.3    | ✅   | Logging avec rotation, stabilité - **41 tests** |
+| **v1.0**    | ✅   | **Interface Tauri, mDNS, Clipboard, Keyring, GUI complète - 60 tests** |
+| v1.1    | 📋   | Multi-écrans avancé par machine       |
+| v1.2    | 📋   | Transfert de fichiers                |
+| v1.3    | 📋   | Profils de configuration multiples    |
+| v2.0    | 💡   | Application mobile compagnon          |
 
 ---
 
