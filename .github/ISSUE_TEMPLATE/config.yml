@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discussions
+    url: https://github.com/yrbane/multishiva/discussions
+    about: Pour les questions générales et les discussions
+  - name: Documentation
+    url: https://github.com/yrbane/multishiva#readme
+    about: Consulter la documentation du projet
