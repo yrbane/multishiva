@@ -4,21 +4,78 @@
 /// input events on different operating systems.
 use anyhow::{Context, Result};
 
+/// Represents the status of system permissions required by MultiShiva.
+///
+/// This enum indicates whether the application has the necessary permissions
+/// to capture and inject input events on the current operating system.
+///
+/// # Examples
+///
+/// ```
+/// use multishiva::core::permissions::PermissionStatus;
+///
+/// let status = PermissionStatus::Granted;
+/// assert!(status.is_granted());
+///
+/// let denied = PermissionStatus::Denied {
+///     missing: vec!["Accessibility".to_string()],
+/// };
+/// assert!(!denied.is_granted());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum PermissionStatus {
     /// All required permissions are granted
     Granted,
     /// Some permissions are missing
-    Denied { missing: Vec<String> },
+    Denied {
+        /// List of permission names that are missing
+        missing: Vec<String>,
+    },
     /// Unable to determine permission status
     Unknown,
 }
 
 impl PermissionStatus {
+    /// Returns `true` if all required permissions are granted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::permissions::PermissionStatus;
+    ///
+    /// let granted = PermissionStatus::Granted;
+    /// assert!(granted.is_granted());
+    ///
+    /// let denied = PermissionStatus::Denied {
+    ///     missing: vec!["input group".to_string()],
+    /// };
+    /// assert!(!denied.is_granted());
+    ///
+    /// let unknown = PermissionStatus::Unknown;
+    /// assert!(!unknown.is_granted());
+    /// ```
     pub fn is_granted(&self) -> bool {
         matches!(self, PermissionStatus::Granted)
     }
 
+    /// Returns a list of missing permissions.
+    ///
+    /// If the status is `Denied`, this returns the list of missing permission names.
+    /// Otherwise, returns an empty vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::permissions::PermissionStatus;
+    ///
+    /// let denied = PermissionStatus::Denied {
+    ///     missing: vec!["Accessibility".to_string(), "Screen Recording".to_string()],
+    /// };
+    /// assert_eq!(denied.missing_permissions().len(), 2);
+    ///
+    /// let granted = PermissionStatus::Granted;
+    /// assert_eq!(granted.missing_permissions().len(), 0);
+    /// ```
     pub fn missing_permissions(&self) -> Vec<String> {
         match self {
             PermissionStatus::Denied { missing } => missing.clone(),
@@ -27,7 +84,44 @@ impl PermissionStatus {
     }
 }
 
-/// Check system permissions for input capture and injection
+/// Checks system permissions for input capture and injection.
+///
+/// This function verifies that the application has the necessary permissions
+/// to capture keyboard and mouse events and inject input on the current operating system.
+/// The specific permissions checked vary by platform:
+///
+/// - **macOS**: Checks for Accessibility API access
+/// - **Linux**: Checks for `/dev/uinput` access and input group membership
+/// - **Windows**: Checks for administrator privileges (optional)
+///
+/// # Returns
+///
+/// Returns a [`PermissionStatus`] indicating whether all required permissions are granted,
+/// or which permissions are missing.
+///
+/// # Errors
+///
+/// Returns an error if the permission check itself fails (e.g., unable to run system commands
+/// or access system files). This is different from permissions being denied, which returns
+/// `Ok(PermissionStatus::Denied { ... })`.
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::permissions::check_permissions;
+///
+/// match check_permissions() {
+///     Ok(status) if status.is_granted() => {
+///         println!("All permissions granted!");
+///     }
+///     Ok(status) => {
+///         println!("Missing permissions: {:?}", status.missing_permissions());
+///     }
+///     Err(e) => {
+///         eprintln!("Failed to check permissions: {}", e);
+///     }
+/// }
+/// ```
 pub fn check_permissions() -> Result<PermissionStatus> {
     #[cfg(target_os = "macos")]
     {
@@ -50,7 +144,24 @@ pub fn check_permissions() -> Result<PermissionStatus> {
     }
 }
 
-/// Get help message for fixing permission issues on current OS
+/// Returns a help message for fixing permission issues on the current operating system.
+///
+/// This function provides platform-specific instructions for granting the necessary
+/// permissions to run MultiShiva. The help text includes step-by-step instructions
+/// and troubleshooting tips appropriate for the current OS.
+///
+/// # Returns
+///
+/// A formatted string containing OS-specific permission setup instructions.
+///
+/// # Examples
+///
+/// ```
+/// use multishiva::core::permissions::get_permission_help;
+///
+/// let help = get_permission_help();
+/// println!("{}", help);
+/// ```
 pub fn get_permission_help() -> String {
     #[cfg(target_os = "macos")]
     {

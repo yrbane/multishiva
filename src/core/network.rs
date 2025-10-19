@@ -9,10 +9,37 @@ use tokio::time::{sleep, Duration};
 use crate::core::events::Event;
 use crate::core::fingerprint::{Fingerprint, FingerprintStore, FingerprintVerification};
 
+/// Interval between heartbeat messages sent to maintain connection liveness.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Maximum time to wait when establishing a TCP connection before timing out.
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Magic bytes used to identify and validate PSK handshake protocol version.
 const PSK_MAGIC: &[u8] = b"MULTISHIVA_PSK_V1";
 
+/// Network manager for secure peer-to-peer communication with PSK authentication.
+///
+/// The `Network` struct handles both hosting and connecting to remote peers,
+/// providing encrypted communication channels with pre-shared key (PSK) authentication
+/// and certificate fingerprint verification for enhanced security.
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::network::Network;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let mut network = Network::new("my-secure-psk".to_string());
+///
+///     // Start hosting on port 8080
+///     let port = network.start_host(8080).await?;
+///     println!("Hosting on port {}", port);
+///
+///     Ok(())
+/// }
+/// ```
 pub struct Network {
     psk: String,
     running: Arc<AtomicBool>,
@@ -24,6 +51,19 @@ pub struct Network {
 }
 
 impl Network {
+    /// Creates a new `Network` instance with the specified pre-shared key.
+    ///
+    /// Initializes the network manager with an event channel, fingerprint store,
+    /// and connection state tracking. The fingerprint store is loaded from the
+    /// default location, or a new one is created if loading fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::network::Network;
+    ///
+    /// let network = Network::new("my-secret-key".to_string());
+    /// ```
     pub fn new(psk: String) -> Self {
         let (tx, rx) = mpsc::channel(100);
         let fingerprint_store = FingerprintStore::load_default().unwrap_or_else(|e| {
@@ -42,6 +82,32 @@ impl Network {
         }
     }
 
+    /// Starts hosting on the specified port and listens for incoming connections.
+    ///
+    /// Binds to `127.0.0.1` on the given port and spawns an async task to accept
+    /// incoming client connections. Each client connection is authenticated using
+    /// PSK handshake before being handled in a separate task.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let mut network = Network::new("psk".to_string());
+    ///     let actual_port = network.start_host(8080).await?;
+    ///     println!("Hosting on port {}", actual_port);
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The port is already in use
+    /// - Unable to bind to the specified address
+    /// - Cannot retrieve the local address from the listener
     pub async fn start_host(&mut self, port: u16) -> Result<u16> {
         let addr = format!("127.0.0.1:{}", port);
         let listener = TcpListener::bind(&addr)
@@ -90,6 +156,33 @@ impl Network {
         Ok(actual_port)
     }
 
+    /// Connects to a remote host at the specified address.
+    ///
+    /// Establishes a TCP connection to the remote host, performs PSK authentication,
+    /// and verifies the host's fingerprint. If the fingerprint is unrecognized or
+    /// mismatched, the connection is rejected as a potential security threat.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let network = Network::new("psk".to_string());
+    ///     network.connect_to_host("127.0.0.1:8080").await?;
+    ///     println!("Connected successfully");
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Connection timeout is exceeded
+    /// - Unable to connect to the host
+    /// - PSK handshake fails (invalid or mismatched PSK)
+    /// - Fingerprint verification fails (potential MITM attack)
     pub async fn connect_to_host(&self, addr: &str) -> Result<()> {
         let mut stream = tokio::time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr))
             .await
@@ -142,6 +235,28 @@ impl Network {
         Ok(())
     }
 
+    /// Sends an event through the internal event channel.
+    ///
+    /// Queues the event for processing by the network subsystem. Events are
+    /// buffered in an async channel with a capacity of 100 messages.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    /// use multishiva::core::events::Event;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let network = Network::new("psk".to_string());
+    ///     // network.send_event(Event::Connect).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event channel is closed or the receiver has been dropped.
     pub async fn send_event(&self, event: Event) -> Result<()> {
         let tx_guard = self.event_tx.read().await;
         if let Some(tx) = tx_guard.as_ref() {
@@ -152,6 +267,26 @@ impl Network {
         Ok(())
     }
 
+    /// Receives the next event from the internal event channel.
+    ///
+    /// Blocks asynchronously until an event is available or the channel is closed.
+    /// Returns `None` if the event sender has been dropped or the channel is closed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let mut network = Network::new("psk".to_string());
+    ///
+    ///     if let Some(event) = network.receive_event().await {
+    ///         println!("Received event: {:?}", event);
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
     pub async fn receive_event(&mut self) -> Option<Event> {
         let mut rx_guard = self.event_rx.write().await;
         if let Some(rx) = rx_guard.as_mut() {
@@ -161,20 +296,93 @@ impl Network {
         }
     }
 
+    /// Stops all network operations and closes active connections.
+    ///
+    /// Signals all running tasks to terminate by setting the running and connected
+    /// flags to false, then waits briefly to allow tasks to clean up gracefully.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let mut network = Network::new("psk".to_string());
+    ///     network.start_host(8080).await?;
+    ///
+    ///     // Later...
+    ///     network.stop().await;
+    ///     Ok(())
+    /// }
+    /// ```
     pub async fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
         self.connected.store(false, Ordering::SeqCst);
         sleep(Duration::from_millis(200)).await; // Give time for tasks to cleanup
     }
 
+    /// Returns whether the network is currently running and hosting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let mut network = Network::new("psk".to_string());
+    ///     assert!(!network.is_running());
+    ///
+    ///     network.start_host(8080).await?;
+    ///     assert!(network.is_running());
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Returns whether the network is currently connected to a remote host.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let network = Network::new("psk".to_string());
+    ///     assert!(!network.is_connected());
+    ///
+    ///     network.connect_to_host("127.0.0.1:8080").await?;
+    ///     assert!(network.is_connected());
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::SeqCst)
     }
 
+    /// Returns the number of currently active client connections.
+    ///
+    /// This count only applies when hosting. Each time a client connects,
+    /// the count is incremented, and decremented when they disconnect.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use multishiva::core::network::Network;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let mut network = Network::new("psk".to_string());
+    ///     network.start_host(8080).await?;
+    ///
+    ///     println!("Active connections: {}", network.connection_count());
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn connection_count(&self) -> usize {
         self.connection_count.load(Ordering::SeqCst)
     }

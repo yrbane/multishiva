@@ -1,6 +1,10 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 
+/// Command-line arguments for MultiShiva
+///
+/// This struct defines all CLI arguments that can be passed to the MultiShiva application.
+/// Arguments can also be set via environment variables with the `MULTISHIVA_` prefix.
 #[derive(Parser, Debug)]
 #[command(name = "multishiva")]
 #[command(author = "yrbane")]
@@ -24,6 +28,9 @@ pub struct Args {
     pub simulate: bool,
 }
 
+/// Operation mode for MultiShiva
+///
+/// Determines whether this instance acts as a host (server) or agent (client).
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 pub enum Mode {
     /// Host mode (master)
@@ -54,10 +61,33 @@ impl Args {
     }
 }
 
+/// Parse command-line arguments
+///
+/// This function parses arguments from the command line using clap.
+/// Arguments can also be set via environment variables.
+///
+/// # Returns
+///
+/// Returns the parsed `Args` struct.
 pub fn parse_args() -> Args {
     Args::parse()
 }
 
+/// Parse and validate command-line arguments
+///
+/// This function parses arguments from the command line and validates
+/// that the argument combinations are valid.
+///
+/// # Returns
+///
+/// Returns `Ok(Args)` if arguments are valid, or an error describing
+/// what is invalid.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `--gui` and `--simulate` are both specified
+/// - `--mode` is specified with `--gui`
 pub fn parse_and_validate() -> Result<Args> {
     let args = Args::parse();
     args.validate()?;

@@ -125,6 +125,11 @@
 //!
 //! MIT License - See LICENSE file for details
 
+/// Application entry point and GUI launcher
 pub mod app;
+
+/// Command-line interface and argument parsing
 pub mod cli;
+
+/// Core functionality modules
 pub mod core;

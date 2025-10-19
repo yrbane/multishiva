@@ -11,13 +11,30 @@ use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-/// Log level configuration
+/// Log level configuration for the logging system.
+///
+/// Defines the severity levels for log messages, from most severe (`Error`)
+/// to most verbose (`Trace`).
+///
+/// # Examples
+///
+/// ```
+/// use multishiva::core::logging::LogLevel;
+///
+/// let level = LogLevel::Info;
+/// println!("Current log level: {}", level);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
+    /// Error level - only critical errors are logged
     Error,
+    /// Warning level - errors and warnings are logged
     Warn,
+    /// Info level - errors, warnings, and informational messages are logged
     Info,
+    /// Debug level - includes debug information for development
     Debug,
+    /// Trace level - most verbose, includes detailed execution traces
     Trace,
 }
 
@@ -45,18 +62,36 @@ impl std::fmt::Display for LogLevel {
     }
 }
 
-/// Logger configuration
+/// Configuration for the logging system.
+///
+/// Controls logging behavior including output destinations (file and/or console),
+/// log levels, rotation, and filtering.
+///
+/// # Examples
+///
+/// ```
+/// use multishiva::core::logging::{LogConfig, LogLevel};
+/// use std::path::PathBuf;
+///
+/// let config = LogConfig {
+///     level: LogLevel::Debug,
+///     enable_file: true,
+///     enable_console: true,
+///     log_dir: Some(PathBuf::from("/var/log/myapp")),
+///     filter: Some("multishiva=debug,tokio=warn".to_string()),
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct LogConfig {
-    /// Base log level
+    /// Base log level for all modules unless overridden by filter
     pub level: LogLevel,
-    /// Enable file logging
+    /// Enable file logging with daily rotation
     pub enable_file: bool,
-    /// Enable console logging
+    /// Enable console logging to stdout
     pub enable_console: bool,
-    /// Log directory path
+    /// Log directory path (uses default if None)
     pub log_dir: Option<PathBuf>,
-    /// Module filters (e.g., "multishiva=debug,tokio=warn")
+    /// Module-specific filters (e.g., "multishiva=debug,tokio=warn")
     pub filter: Option<String>,
 }
 
@@ -72,7 +107,35 @@ impl Default for LogConfig {
     }
 }
 
-/// Initialize the logging system
+/// Initialize the logging system with the provided configuration.
+///
+/// Sets up the tracing subscriber with file and/or console outputs based on
+/// the configuration. File logging uses daily rotation and the log directory
+/// is created if it doesn't exist.
+///
+/// # Arguments
+///
+/// * `config` - The logging configuration specifying level, outputs, and filters
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful initialization.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The log directory cannot be created
+/// - The filter string is invalid
+/// - The tracing subscriber fails to initialize (e.g., already initialized)
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::logging::{LogConfig, init_logging};
+///
+/// let config = LogConfig::default();
+/// init_logging(config).expect("Failed to initialize logging");
+/// ```
 pub fn init_logging(config: LogConfig) -> Result<()> {
     let log_dir = config.log_dir.clone().unwrap_or_else(get_default_log_dir);
 
@@ -136,7 +199,24 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
     Ok(())
 }
 
-/// Get default log directory
+/// Get the default log directory path.
+///
+/// Returns the platform-specific data directory for multishiva logs.
+/// On Linux, this is typically `~/.local/share/multishiva/logs`.
+/// Falls back to `./logs` if the platform data directory cannot be determined.
+///
+/// # Returns
+///
+/// The default log directory path as a `PathBuf`.
+///
+/// # Examples
+///
+/// ```
+/// use multishiva::core::logging::get_default_log_dir;
+///
+/// let log_dir = get_default_log_dir();
+/// println!("Logs will be stored in: {:?}", log_dir);
+/// ```
 pub fn get_default_log_dir() -> PathBuf {
     if let Some(data_dir) = dirs::data_local_dir() {
         data_dir.join("multishiva").join("logs")
@@ -146,7 +226,31 @@ pub fn get_default_log_dir() -> PathBuf {
     }
 }
 
-/// Get all log files in the log directory
+/// Get all log files in the log directory.
+///
+/// Scans the default log directory and returns paths to all `.log` files,
+/// sorted alphabetically. Returns an empty vector if the directory doesn't exist.
+///
+/// # Returns
+///
+/// A vector of `PathBuf`s pointing to log files, sorted alphabetically.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The log directory cannot be read
+/// - A directory entry cannot be accessed
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::logging::get_log_files;
+///
+/// let log_files = get_log_files().expect("Failed to get log files");
+/// for file in log_files {
+///     println!("Log file: {:?}", file);
+/// }
+/// ```
 pub fn get_log_files() -> Result<Vec<PathBuf>> {
     let log_dir = get_default_log_dir();
 
@@ -169,7 +273,35 @@ pub fn get_log_files() -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Delete old log files (keeps last N files)
+/// Delete old log files, keeping only the most recent N files.
+///
+/// Removes the oldest log files based on modification time, retaining only
+/// the specified number of most recent files. If there are fewer files than
+/// `keep_count`, no files are deleted.
+///
+/// # Arguments
+///
+/// * `keep_count` - Number of most recent log files to retain
+///
+/// # Returns
+///
+/// Returns `Ok(())` on successful cleanup.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Log files cannot be retrieved
+/// - File metadata cannot be accessed
+/// - A file cannot be deleted
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::logging::cleanup_old_logs;
+///
+/// // Keep only the 7 most recent log files
+/// cleanup_old_logs(7).expect("Failed to cleanup logs");
+/// ```
 pub fn cleanup_old_logs(keep_count: usize) -> Result<()> {
     let mut files = get_log_files()?;
 

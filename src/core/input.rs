@@ -8,17 +8,106 @@ use crate::core::events::{Event, Key, MouseButton};
 
 type EventFilter = Box<dyn Fn(&Event) -> bool + Send + Sync>;
 
+/// Trait for handling input capture and injection across different platforms.
+///
+/// This trait provides a unified interface for capturing keyboard and mouse events
+/// from the operating system and injecting synthetic events back into the system.
+/// Implementations must be thread-safe (`Send + Sync`).
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::input::{InputHandler, RdevInputHandler};
+/// use tokio::sync::mpsc;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let mut handler = RdevInputHandler::new();
+///     let (tx, mut rx) = mpsc::channel(100);
+///
+///     handler.start_capture(tx).await?;
+///
+///     // Process captured events
+///     while let Some(event) = rx.recv().await {
+///         println!("Captured: {:?}", event);
+///     }
+///
+///     Ok(())
+/// }
+/// ```
 #[allow(async_fn_in_trait)]
 pub trait InputHandler: Send + Sync {
+    /// Starts capturing input events from the system.
+    ///
+    /// Begins monitoring all keyboard and mouse events and sends them through
+    /// the provided channel. This method is idempotent - calling it multiple
+    /// times has no additional effect if already capturing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying event capture mechanism fails to initialize,
+    /// which may happen due to insufficient permissions or platform-specific issues.
     async fn start_capture(&mut self, tx: mpsc::Sender<Event>) -> Result<()>;
+
+    /// Stops capturing input events.
+    ///
+    /// Terminates the event capture loop started by `start_capture`. May take
+    /// a short time to complete as it waits for the capture thread to finish.
     async fn stop_capture(&mut self);
+
+    /// Injects a synthetic input event into the system.
+    ///
+    /// Simulates the given event as if it came from a physical input device.
+    /// This requires appropriate system permissions on most platforms.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The event cannot be converted to the platform-specific format
+    /// - The system rejects the event injection due to permissions
+    /// - The underlying simulation mechanism fails
     async fn inject_event(&self, event: Event) -> Result<()>;
+
+    /// Returns whether input capture is currently active.
     fn is_capturing(&self) -> bool;
+
+    /// Returns the current screen dimensions in pixels as (width, height).
     fn get_screen_size(&self) -> (u32, u32);
+
+    /// Returns the current cursor position in screen coordinates as (x, y).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cursor position cannot be retrieved from the system.
     fn get_cursor_position(&self) -> Result<(i32, i32)>;
+
+    /// Checks whether the application has necessary permissions for input capture/injection.
+    ///
+    /// On macOS, this checks Accessibility permissions. On Linux, it checks for
+    /// input device access. On Windows, it verifies input injection privileges.
     fn check_permissions(&self) -> bool;
 }
 
+/// Input handler implementation using the rdev library.
+///
+/// Provides cross-platform input capture and injection using the `rdev` crate.
+/// Supports features like kill switches (emergency stop key combinations),
+/// local input blocking, and event filtering.
+///
+/// # Examples
+///
+/// ```no_run
+/// use multishiva::core::input::RdevInputHandler;
+/// use multishiva::core::events::Key;
+///
+/// let mut handler = RdevInputHandler::new();
+///
+/// // Set up an emergency stop with Ctrl+Alt+Q
+/// handler.set_kill_switch(vec![Key::ControlLeft, Key::AltLeft, Key::KeyQ]);
+///
+/// // Enable blocking of local input
+/// handler.set_block_local(true);
+/// ```
 pub struct RdevInputHandler {
     capturing: Arc<AtomicBool>,
     block_local: Arc<AtomicBool>,
@@ -34,6 +123,20 @@ impl Default for RdevInputHandler {
 }
 
 impl RdevInputHandler {
+    /// Creates a new input handler with default settings.
+    ///
+    /// Initializes the handler with capturing disabled, no kill switch,
+    /// no event filter, and local input blocking disabled.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::input::RdevInputHandler;
+    ///
+    /// let handler = RdevInputHandler::new();
+    /// assert!(!handler.is_capturing());
+    /// assert!(!handler.has_kill_switch());
+    /// ```
     pub fn new() -> Self {
         Self {
             capturing: Arc::new(AtomicBool::new(false)),
@@ -44,12 +147,28 @@ impl RdevInputHandler {
         }
     }
 
+    /// Sets a kill switch key combination.
+    ///
+    /// When all specified keys are pressed simultaneously, the kill switch
+    /// activates. This is typically used as an emergency stop mechanism.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::input::RdevInputHandler;
+    /// use multishiva::core::events::Key;
+    ///
+    /// let handler = RdevInputHandler::new();
+    /// handler.set_kill_switch(vec![Key::ControlLeft, Key::AltLeft, Key::KeyQ]);
+    /// assert!(handler.has_kill_switch());
+    /// ```
     pub fn set_kill_switch(&self, keys: Vec<Key>) {
         if let Ok(mut lock) = self.kill_switch.write() {
             *lock = Some(keys);
         }
     }
 
+    /// Returns whether a kill switch is currently configured.
     pub fn has_kill_switch(&self) -> bool {
         if let Ok(lock) = self.kill_switch.read() {
             lock.is_some()
@@ -58,14 +177,51 @@ impl RdevInputHandler {
         }
     }
 
+    /// Enables or disables local input blocking.
+    ///
+    /// When enabled, captured input events are prevented from reaching
+    /// the local system. This is platform-specific and may require
+    /// low-level hooks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::input::RdevInputHandler;
+    ///
+    /// let mut handler = RdevInputHandler::new();
+    /// handler.set_block_local(true);
+    /// assert!(handler.is_blocking_local());
+    /// ```
     pub fn set_block_local(&mut self, block: bool) {
         self.block_local.store(block, Ordering::SeqCst);
     }
 
+    /// Returns whether local input blocking is enabled.
     pub fn is_blocking_local(&self) -> bool {
         self.block_local.load(Ordering::SeqCst)
     }
 
+    /// Sets a custom filter function for captured events.
+    ///
+    /// The filter function receives each captured event and returns `true`
+    /// to allow it or `false` to drop it. Only events that pass the filter
+    /// are forwarded through the capture channel.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use multishiva::core::input::RdevInputHandler;
+    /// use multishiva::core::events::Event;
+    ///
+    /// let handler = RdevInputHandler::new();
+    ///
+    /// // Only allow mouse events
+    /// handler.set_event_filter(|event| {
+    ///     matches!(event, Event::MouseMove { .. } | Event::MouseButtonPress { .. })
+    /// });
+    ///
+    /// assert!(handler.has_event_filter());
+    /// ```
     pub fn set_event_filter<F>(&self, filter: F)
     where
         F: Fn(&Event) -> bool + Send + Sync + 'static,
@@ -75,6 +231,7 @@ impl RdevInputHandler {
         }
     }
 
+    /// Returns whether an event filter is currently configured.
     pub fn has_event_filter(&self) -> bool {
         if let Ok(lock) = self.event_filter.read() {
             lock.is_some()
@@ -262,6 +419,10 @@ impl InputHandler for RdevInputHandler {
     }
 }
 
+/// Converts an rdev event type to our internal Event representation.
+///
+/// Maps platform-specific rdev events to our unified Event enum. Returns
+/// `None` for events that cannot be mapped or are not supported.
 fn convert_rdev_to_event(event: RdevEventType) -> Option<Event> {
     match event {
         RdevEventType::MouseMove { x, y } => Some(Event::MouseMove {
@@ -288,6 +449,11 @@ fn convert_rdev_to_event(event: RdevEventType) -> Option<Event> {
     }
 }
 
+/// Converts our internal Event to rdev's event type for injection.
+///
+/// Maps our unified Event enum to platform-specific rdev event types.
+/// Returns `None` for events that cannot be injected (e.g., MouseClick,
+/// FocusGrant, FocusRelease, Heartbeat).
 fn convert_event_to_rdev(event: &Event) -> Option<RdevEventType> {
     match event {
         Event::MouseMove { x, y } => Some(RdevEventType::MouseMove {
@@ -322,6 +488,9 @@ fn convert_event_to_rdev(event: &Event) -> Option<RdevEventType> {
     }
 }
 
+/// Converts an rdev mouse button to our MouseButton type.
+///
+/// Returns `None` for buttons that are not Left, Right, or Middle.
 fn convert_rdev_button(button: Button) -> Option<MouseButton> {
     match button {
         Button::Left => Some(MouseButton::Left),
@@ -331,6 +500,10 @@ fn convert_rdev_button(button: Button) -> Option<MouseButton> {
     }
 }
 
+/// Converts our MouseButton type to rdev's Button type.
+///
+/// All MouseButton variants have a corresponding rdev Button, so this
+/// always returns `Some`.
 fn convert_button_to_rdev(button: &MouseButton) -> Option<Button> {
     match button {
         MouseButton::Left => Some(Button::Left),
@@ -339,6 +512,11 @@ fn convert_button_to_rdev(button: &MouseButton) -> Option<Button> {
     }
 }
 
+/// Converts an rdev key to our internal Key representation.
+///
+/// Maps platform-specific rdev keys to our unified Key enum. Only common
+/// keys (letters, modifiers, special keys) are supported. Returns `None`
+/// for unmapped keys.
 fn convert_rdev_key(key: RdevKey) -> Option<Key> {
     // Map common keys - this is a simplified mapping
     match key {
@@ -391,6 +569,10 @@ fn convert_rdev_key(key: RdevKey) -> Option<Key> {
     }
 }
 
+/// Converts our internal Key to rdev's Key type for injection.
+///
+/// Maps our unified Key enum to platform-specific rdev key codes.
+/// Only common keys (letters, modifiers, special keys) are supported.
 fn convert_key_to_rdev(key: &Key) -> Option<RdevKey> {
     match key {
         // Letters
