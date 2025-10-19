@@ -1,4 +1,4 @@
-use multishiva::core::events::{Event, MouseButton};
+use multishiva::core::events::{Event, Key, MouseButton};
 
 #[test]
 fn test_event_mouse_move_serialization() {
@@ -33,15 +33,13 @@ fn test_event_mouse_click_serialization() {
 
 #[test]
 fn test_event_key_press_serialization() {
-    let event = Event::KeyPress {
-        key: "A".to_string(),
-    };
+    let event = Event::KeyPress { key: Key::KeyA };
     let serialized = rmp_serde::to_vec(&event).unwrap();
     let deserialized: Event = rmp_serde::from_slice(&serialized).unwrap();
 
     match deserialized {
         Event::KeyPress { key } => {
-            assert_eq!(key, "A");
+            assert_eq!(key, Key::KeyA);
         }
         _ => panic!("Wrong event type"),
     }
