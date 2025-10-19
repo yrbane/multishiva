@@ -45,16 +45,33 @@ cargo install --path .
 #### Mode Host (machine maître)
 
 ```bash
-multishiva --mode host --config ./config.yaml
+# Avec la configuration par défaut (multishiva.yml)
+RUST_LOG=info cargo run
+
+# Ou avec le binaire compilé
+./target/release/multishiva
+
+# Avec une configuration spécifique
+./target/release/multishiva --config /path/to/config.yml
 ```
 
 #### Mode Agent (machines contrôlées)
 
 ```bash
-multishiva --mode agent --config ./config.yaml
+# Copier la configuration exemple
+cp multishiva-agent.yml.example multishiva-agent.yml
+
+# Éditer et lancer
+./target/release/multishiva --config multishiva-agent.yml
 ```
 
-#### Interface graphique
+#### Mode Simulation (pour tester sans matériel)
+
+```bash
+RUST_LOG=info cargo run -- --simulate
+```
+
+#### Interface graphique (à venir v1.0)
 
 ```bash
 multishiva --gui
@@ -66,42 +83,51 @@ multishiva --gui
 
 ### Exemple de configuration Host
 
-Créez un fichier `config.yaml` :
+Créez un fichier `multishiva.yml` :
 
 ```yaml
-self: "desktop-shiva"
-mode: "host"
+self_name: "desktop"
+mode: host
 port: 53421
 
 tls:
-  psk: "SUPER_SECRET_KEY"
+  psk: "change-this-to-a-secure-random-string"
 
 edges:
-  right_of: "laptop-shiva"
-  below: "mbp-shiva"
+  right: "laptop"    # Machine à droite
+  bottom: "macbook"  # Machine en bas
+  # left: "other"
+  # top: "another"
 
 hotkeys:
-  focus_return: "Ctrl+Ctrl"
-  kill_switch: "Ctrl+Alt+Pause"
+  focus_return: "Ctrl+Alt+H"
+  kill_switch: "Ctrl+Alt+K"
 
 behavior:
-  edge_threshold_px: 3
-  friction_ms: 80
+  edge_threshold_px: 10
+  friction_ms: 100
+  reconnect_delay_ms: 5000
 ```
 
 ### Exemple de configuration Agent
 
 ```yaml
-self: "laptop-shiva"
-mode: "agent"
-host: "desktop-shiva.local"
+self_name: "laptop"
+mode: agent
 port: 53421
+host_address: "192.168.1.100:53421"  # IP du host
 
 tls:
-  psk: "SUPER_SECRET_KEY"
+  psk: "change-this-to-a-secure-random-string"  # MÊME clé que le host
+
+edges:
+  left: "desktop"    # Le host est à gauche
+  right: "macbook"   # Autre machine à droite
 
 behavior:
-  reconnect_delay_ms: 1000
+  edge_threshold_px: 10
+  friction_ms: 100
+  reconnect_delay_ms: 5000
 ```
 
 ---
@@ -221,13 +247,13 @@ Consultez [IDEA.md](IDEA.md) pour le concept complet et les spécifications dét
 
 | Version | État | Fonctionnalités                       |
 |---------|------|---------------------------------------|
-| v0.1    | 🚧   | Configuration, CLI, topologie         |
-| v0.2    | 📋   | Réseau TCP/TLS, transfert de focus    |
-| v0.3    | 📋   | Capture/injection entrées, simulation |
+| v0.1    | ✅   | Config, CLI, topologie, réseau, focus, input, simulation - **105 tests** |
+| v0.2    | 📋   | Amélioration input handling, stabilité réseau |
+| v0.3    | 📋   | Clipboard sync, drag & drop          |
 | v1.0    | 📋   | Interface Tauri complète              |
 | v1.2    | 📋   | Auto-découverte mDNS                  |
-| v1.3    | 📋   | Synchronisation clipboard             |
-| v1.4    | 📋   | Support multi-écrans avancé           |
+| v1.3    | 📋   | Multi-écrans avancé par machine       |
+| v1.4    | 📋   | Profils de configuration multiples    |
 | v1.5    | 💡   | Application mobile compagnon          |
 
 ---

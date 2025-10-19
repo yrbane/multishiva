@@ -25,6 +25,8 @@ gui/out/
 # Config locale
 *.local.yaml
 config.local.yaml
+multishiva.yml
+multishiva-*.yml
 
 # Logs
 logs/

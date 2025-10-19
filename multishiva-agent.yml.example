@@ -1,0 +1,31 @@
+# MultiShiva Agent Configuration Example
+# This is an agent configuration - a machine that connects to a host
+
+self_name: "agent1"
+mode: agent
+port: 53421
+
+# Address of the host machine to connect to
+host_address: "192.168.1.100:53421"  # Change to your host's IP address
+
+# TLS Pre-Shared Key - MUST be the same as the host
+tls:
+  psk: "change-this-to-a-secure-random-string"
+
+# Define which machines are on which edges of THIS screen
+edges:
+  left: "host"     # Host is to the left
+  right: "agent2"  # Another agent to the right
+  # top: "agent3"
+  # bottom: "agent4"
+
+# Optional: Hotkey configuration
+hotkeys:
+  focus_return: "Ctrl+Alt+H"
+  kill_switch: "Ctrl+Alt+K"
+
+# Optional: Behavior tuning
+behavior:
+  edge_threshold_px: 10
+  friction_ms: 100
+  reconnect_delay_ms: 5000
