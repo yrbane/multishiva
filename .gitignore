@@ -1,5 +1,6 @@
 # Rust
 target/
+src-tauri/target/
 Cargo.lock
 **/*.rs.bk
 *.pdb

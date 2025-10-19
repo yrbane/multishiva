@@ -1,0 +1,10 @@
+{
+  "name": "multishiva",
+  "private": true,
+  "version": "0.3.0",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  }
+}
