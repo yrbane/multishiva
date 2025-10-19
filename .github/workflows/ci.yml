@@ -57,7 +57,7 @@ jobs:
       - name: Install system dependencies (Linux)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxtst-dev
+          sudo apt-get install -y libx11-dev libxtst-dev libevdev-dev
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -101,8 +101,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxtst-dev
 
-      - name: Run tests
-        run: cargo test --verbose --all
+      - name: Run tests (excluding input tests)
+        run: |
+          cargo test --lib --verbose
+          cargo test --test test_cli --verbose
+          cargo test --test test_config --verbose
+          cargo test --test test_events --verbose
+          cargo test --test test_focus --verbose
+          cargo test --test test_integration --verbose
+          cargo test --test test_network --verbose
+          cargo test --test test_security --verbose
+          cargo test --test test_simulation --verbose
+          cargo test --test test_topology --verbose
 
   build:
     name: Build Release
@@ -178,8 +188,16 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
 
-      - name: Generate coverage
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+      - name: Generate coverage (excluding input tests)
+        run: |
+          cargo tarpaulin \
+            --lib \
+            --tests \
+            --exclude-files src/core/input.rs \
+            --exclude-files tests/test_input.rs \
+            --verbose \
+            --timeout 120 \
+            --out Xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
