@@ -38,11 +38,35 @@ pub struct Behavior {
     pub reconnect_delay_ms: Option<u64>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            self_name: "multishiva".to_string(),
+            mode: ConfigMode::Host,
+            port: 53421,
+            tls: TlsConfig { psk: String::new() },
+            edges: HashMap::new(),
+            hotkeys: None,
+            behavior: None,
+        }
+    }
+}
+
 impl Config {
     pub fn from_file(path: &str) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let config: Config = serde_yaml::from_str(&content)?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.self_name.is_empty() {
+            anyhow::bail!("self_name cannot be empty");
+        }
+        if self.tls.psk.is_empty() {
+            anyhow::bail!("TLS PSK cannot be empty");
+        }
+        Ok(())
     }
 }
 
