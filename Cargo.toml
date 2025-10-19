@@ -62,6 +62,9 @@ mdns-sd = "0.13"
 # Clipboard synchronization
 clipboard-rs = "0.2"
 
+# Secure credential storage
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.13"

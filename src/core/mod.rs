@@ -5,6 +5,7 @@ pub mod events;
 pub mod fingerprint;
 pub mod focus;
 pub mod input;
+pub mod keyring;
 pub mod logging;
 pub mod network;
 pub mod permissions;
