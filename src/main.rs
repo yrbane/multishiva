@@ -179,6 +179,77 @@ async fn run_simulation_mode(config: Config, _topology: Topology) -> Result<()> 
     Ok(())
 }
 
+/// Discover a MultiShiva host on the network using mDNS
+///
+/// This function starts mDNS service discovery and waits for up to 5 seconds
+/// to find a host. If multiple hosts are found, it returns the first one.
+async fn discover_host_via_mdns(config: &Config) -> Result<String> {
+    use multishiva::core::discovery::Discovery;
+
+    tracing::info!("Starting mDNS discovery...");
+    let discovery = Discovery::new(config.self_name.clone())?;
+
+    // Start browsing for MultiShiva services
+    discovery.start_browsing()?;
+
+    // Wait for discovery (check every 500ms for up to 5 seconds)
+    let max_attempts = 10;
+    for attempt in 1..=max_attempts {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        let peers = discovery.get_peers();
+
+        // Filter for hosts (not other agents - exclude self)
+        let hosts: Vec<_> = peers
+            .iter()
+            .filter(|peer| peer.name != config.self_name)
+            .collect();
+
+        if !hosts.is_empty() {
+            let peer_info = hosts[0];
+            let address = peer_info.full_address();
+            tracing::info!(
+                "✓ Found host '{}' at {} (attempt {}/{})",
+                peer_info.name,
+                address,
+                attempt,
+                max_attempts
+            );
+
+            if hosts.len() > 1 {
+                tracing::warn!(
+                    "Multiple hosts found on network, using first one: {}",
+                    peer_info.name
+                );
+                for info in hosts.iter().skip(1) {
+                    tracing::warn!("  - Also found: {} at {}", info.name, info.full_address());
+                }
+            }
+
+            return Ok(address);
+        }
+
+        if attempt < max_attempts {
+            tracing::debug!(
+                "No hosts found yet, waiting... (attempt {}/{})",
+                attempt,
+                max_attempts
+            );
+        }
+    }
+
+    anyhow::bail!(
+        "No MultiShiva host found on the network after 5 seconds.\n\
+         \n\
+         Troubleshooting:\n\
+         1. Make sure a host is running: `multishiva --mode host`\n\
+         2. Check firewall settings (port {} should be open)\n\
+         3. Verify both machines are on the same network\n\
+         4. Manually specify host address: `multishiva --mode agent --host <address>`",
+        config.port
+    )
+}
+
 async fn run_production_mode(config: Config, _topology: Topology) -> Result<()> {
     tracing::info!("🚀 Running in PRODUCTION mode");
 
@@ -188,15 +259,22 @@ async fn run_production_mode(config: Config, _topology: Topology) -> Result<()> 
     match config.mode {
         ConfigMode::Host => run_host_mode(config, focus).await,
         ConfigMode::Agent => {
-            let host_address = config.host_address.clone().ok_or_else(|| {
-                anyhow::anyhow!("host_address must be specified in config for agent mode")
-            })?;
+            // If host_address is not specified, try to discover it via mDNS
+            let host_address = if let Some(addr) = config.host_address.clone() {
+                addr
+            } else {
+                tracing::info!("🔍 No host address specified, using mDNS auto-discovery...");
+                discover_host_via_mdns(&config).await?
+            };
             run_agent_mode(config, focus, &host_address).await
         }
     }
 }
 
 async fn run_host_mode(config: Config, mut _focus: FocusManager) -> Result<()> {
+    use multishiva::core::discovery::Discovery;
+    use std::collections::HashMap;
+
     tracing::info!("Starting as HOST on port {}", config.port);
 
     let mut network = Network::new(config.tls.psk.clone());
@@ -204,6 +282,12 @@ async fn run_host_mode(config: Config, mut _focus: FocusManager) -> Result<()> {
     // Start host server
     let actual_port = network.start_host(config.port).await?;
     tracing::info!("✓ Host listening on port {}", actual_port);
+
+    // Register this host on mDNS for auto-discovery
+    tracing::info!("📡 Registering host on mDNS for auto-discovery...");
+    let discovery = Discovery::new(config.self_name.clone())?;
+    discovery.register(actual_port, None, HashMap::new())?;
+    tracing::info!("✓ Host registered on mDNS as '{}'", config.self_name);
 
     tracing::info!("Waiting for agents to connect...");
     tracing::info!("Press Ctrl+C to exit");
