@@ -10,8 +10,22 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+    // Initialize logging system with default configuration
+    use multishiva::core::logging::{init_logging, LogConfig, LogLevel};
+
+    let log_config = LogConfig {
+        level: if cfg!(debug_assertions) {
+            LogLevel::Debug
+        } else {
+            LogLevel::Info
+        },
+        enable_file: true,
+        enable_console: true,
+        log_dir: None, // Use default: ~/.local/share/multishiva/logs/
+        filter: std::env::var("RUST_LOG").ok(),
+    };
+
+    init_logging(log_config)?;
 
     tracing::info!("🕉️  MultiShiva v{} starting...", env!("CARGO_PKG_VERSION"));
 
