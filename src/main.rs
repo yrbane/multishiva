@@ -14,8 +14,16 @@ async fn main() -> Result<()> {
 
     tracing::info!("🕉️  MultiShiva v{} starting...", env!("CARGO_PKG_VERSION"));
 
-    // Parse CLI arguments
-    let args = cli::parse_args();
+    // Parse and validate CLI arguments
+    let args = cli::parse_and_validate()?;
+
+    // Check if GUI mode is requested
+    if args.gui {
+        anyhow::bail!(
+            "GUI mode is not yet implemented. Coming in v1.0!\n\
+             For now, use: multishiva --simulate to test in simulation mode"
+        );
+    }
 
     // Load configuration
     let config_path = args.config.as_deref().unwrap_or("multishiva.yml");
