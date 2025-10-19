@@ -1,6 +1,6 @@
 [package]
 name = "multishiva-gui"
-version = "1.0.0"
+version = "1.1.0"
 description = "MultiShiva GUI - Control multiple computers with one keyboard and mouse"
 authors = ["yrbane"]
 license = "MIT"

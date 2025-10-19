@@ -5,6 +5,51 @@ All notable changes to MultiShiva will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-10-19
+
+### Added
+- **Automatic Host Discovery via mDNS**: Zero-configuration agent mode
+  - Agents can now auto-discover hosts on the network without specifying IP addresses
+  - `discover_host_via_mdns()` function with 5-second timeout
+  - Host automatically registers on mDNS at startup
+  - Support for multiple hosts with warnings
+  - Detailed troubleshooting in error messages
+
+### Changed
+- **Enhanced CLI Flexibility**: Command-line arguments now override config file
+  - `--mode` flag now properly overrides config file mode setting
+  - New `--host` argument for specifying agent host address
+  - CLI overrides are logged for debugging
+  - Improved first-run experience with helpful error messages
+
+### Fixed
+- Fixed Tauri GUI module name reference (`app_lib` → `multishiva_gui_lib`)
+- Fixed mDNS hostname format requirement (hostnames must end with `.local.`)
+- Improved config file error message with step-by-step setup instructions
+
+### Documentation
+- Completed comprehensive rustdoc documentation for all modules (closes #23)
+- Added detailed examples and usage notes
+- Updated CLI tests to reflect new `host` parameter
+
+## [1.0.0] - 2025-10-19
+
+### Added
+- **Complete Tauri GUI Implementation**: React + TypeScript interface
+  - Interactive MachineGrid with drag-and-drop topology editor
+  - Comprehensive SettingsPanel for configuration
+  - Real-time StatusBar with connection monitoring
+  - SecurityPanel for PSK management
+- **Clipboard Synchronization**: Cross-machine clipboard sharing
+- **Secure PSK Storage**: System keyring integration
+- **mDNS Discovery**: Automatic peer detection
+- **Config Persistence**: Automatic config saving with versioning
+- **Comprehensive Logging**: Rotation and multi-level support
+
+### Changed
+- Project version bumped to 1.0.0
+- Complete GUI workflow with all core features
+
 ## [0.3.0] - 2025-10-19
 
 ### Added
