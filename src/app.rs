@@ -1,27 +1,89 @@
-/// GUI Application module (Tauri)
+/// GUI Application module
 ///
-/// This module will contain the Tauri application initialization and setup.
-/// Coming in v1.0 - Complete GUI with React + TypeScript
+/// Launches the Tauri-based GUI application for MultiShiva.
 ///
-/// Features planned:
-/// - Drag-and-drop machine positioning
-/// - Visual topology editor
-/// - Real-time connection status
-/// - Settings panel
-/// - System tray integration
-#[cfg(feature = "gui")]
-pub fn launch_gui() -> anyhow::Result<()> {
-    // TODO: Initialize Tauri app
-    // TODO: Setup React frontend
-    // TODO: Setup IPC bridge
-    anyhow::bail!("GUI not yet implemented - Coming in v1.0")
+/// ## Development Mode
+///
+/// In development, this will spawn `cargo tauri dev` to run the GUI with hot-reload.
+///
+/// ## Production Mode
+///
+/// In production builds, users should use the standalone Tauri application built
+/// with `cargo tauri build`, which creates platform-specific installers.
+///
+/// ## Usage
+///
+/// ```bash
+/// # Development
+/// cargo run -- --gui
+/// # Or directly:
+/// cargo tauri dev
+///
+/// # Production
+/// cargo tauri build
+/// ```
+use anyhow::Result;
+use std::process::Command;
+
+/// Launch the Tauri GUI application
+pub fn launch_gui() -> Result<()> {
+    tracing::info!("Starting MultiShiva GUI v{}", env!("CARGO_PKG_VERSION"));
+
+    // Check if we're in development mode (cargo is available)
+    if is_dev_environment() {
+        launch_dev_gui()
+    } else {
+        launch_prod_gui()
+    }
 }
 
-#[cfg(not(feature = "gui"))]
-pub fn launch_gui() -> anyhow::Result<()> {
+/// Check if running in development environment
+fn is_dev_environment() -> bool {
+    // Check if we're running from cargo (not an installed binary)
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.to_str().map(|s| s.contains("target")))
+        .unwrap_or(false)
+}
+
+/// Launch GUI in development mode using cargo tauri dev
+fn launch_dev_gui() -> Result<()> {
+    tracing::info!("Launching GUI in development mode...");
+    tracing::info!("Running: cargo tauri dev");
+
+    let status = Command::new("cargo").arg("tauri").arg("dev").status();
+
+    match status {
+        Ok(exit_status) => {
+            if exit_status.success() {
+                Ok(())
+            } else {
+                anyhow::bail!("Tauri dev server exited with error")
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to launch Tauri GUI: {}", e);
+            anyhow::bail!(
+                "Failed to launch GUI. Make sure you have Tauri CLI installed:\n\
+                 cargo install tauri-cli\n\n\
+                 Or run directly:\n\
+                 cargo tauri dev"
+            )
+        }
+    }
+}
+
+/// Launch GUI in production mode
+fn launch_prod_gui() -> Result<()> {
+    tracing::error!("Production GUI launch not yet implemented");
     anyhow::bail!(
-        "MultiShiva was built without GUI support.\n\
-         Rebuild with --features gui to enable GUI mode."
+        "MultiShiva GUI must be built as a standalone application.\n\n\
+         To build the production GUI:\n\
+         cargo tauri build\n\n\
+         This will create platform-specific installers in:\n\
+         src-tauri/target/release/bundle/\n\n\
+         For development, use:\n\
+         cargo tauri dev"
     )
 }
 
@@ -30,8 +92,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gui_launch_not_implemented() {
-        let result = launch_gui();
-        assert!(result.is_err());
+    fn test_dev_environment_detection() {
+        // This test will pass in development (when running via cargo)
+        // We just ensure the function doesn't panic
+        let _ = is_dev_environment();
     }
 }

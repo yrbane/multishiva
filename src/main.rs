@@ -34,10 +34,8 @@ async fn main() -> Result<()> {
 
     // Check if GUI mode is requested
     if args.gui {
-        anyhow::bail!(
-            "GUI mode is not yet implemented. Coming in v1.0!\n\
-             For now, use: multishiva --simulate to test in simulation mode"
-        );
+        tracing::info!("🖥️  Launching GUI mode...");
+        return multishiva::app::launch_gui();
     }
 
     // Load configuration

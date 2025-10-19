@@ -4,7 +4,7 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(name = "multishiva")]
 #[command(author = "yrbane")]
-#[command(version = "0.1.0")]
+#[command(version = "1.0.0")]
 #[command(about = "Control multiple computers with one keyboard and mouse", long_about = None)]
 pub struct Args {
     /// Mode of operation
