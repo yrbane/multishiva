@@ -1,6 +1,7 @@
 # MultiShiva Agent Configuration Example
 # This is an agent configuration - a machine that connects to a host
 
+version: 1
 self_name: "agent1"
 mode: agent
 port: 53421

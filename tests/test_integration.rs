@@ -104,6 +104,7 @@ async fn test_integration_simulation_mode_full_scenario() {
 async fn test_integration_config_to_topology() {
     // Create a config programmatically (simulating loaded YAML)
     let config = Config {
+        version: multishiva::core::config::CONFIG_VERSION,
         self_name: "host".to_string(),
         mode: ConfigMode::Host,
         port: 53421,
@@ -343,6 +344,7 @@ async fn test_integration_complete_workflow() {
 
     // 1. Configuration
     let config = Config {
+        version: multishiva::core::config::CONFIG_VERSION,
         self_name: "host".to_string(),
         mode: ConfigMode::Host,
         port: 53421,
