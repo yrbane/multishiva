@@ -9,6 +9,12 @@ pub struct RdevInputHandler {
     // Input handling implementation
 }
 
+impl Default for RdevInputHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RdevInputHandler {
     pub fn new() -> Self {
         Self {}
@@ -34,6 +40,5 @@ mod tests {
     #[test]
     fn test_input_handler_creation() {
         let _handler = RdevInputHandler::new();
-        assert!(true);
     }
 }

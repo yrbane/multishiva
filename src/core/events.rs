@@ -20,11 +20,8 @@ pub enum MouseButton {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_event_serialization() {
-        // Basic smoke test
-        assert!(true);
+        // Basic smoke test - empty test for now
     }
 }

@@ -48,11 +48,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_config_structure() {
-        // Basic smoke test
-        assert!(true);
+        // Basic smoke test - empty test for now
     }
 }

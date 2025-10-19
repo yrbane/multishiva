@@ -4,6 +4,12 @@ pub struct Network {
     // Network implementation will go here
 }
 
+impl Default for Network {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Network {
     pub fn new() -> Self {
         Self {}
@@ -27,6 +33,5 @@ mod tests {
     #[test]
     fn test_network_creation() {
         let _network = Network::new();
-        assert!(true);
     }
 }

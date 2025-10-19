@@ -37,11 +37,8 @@ pub fn parse_args() -> Args {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_args_parsing() {
-        // Basic smoke test
-        assert!(true);
+        // Basic smoke test - empty test for now
     }
 }

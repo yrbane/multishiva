@@ -3,6 +3,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct Topology {
     machines: HashMap<String, Position>,
+    #[allow(dead_code)]
     edges: HashMap<String, HashMap<Edge, String>>,
 }
 
@@ -20,6 +21,12 @@ pub enum Edge {
     Bottom,
 }
 
+impl Default for Topology {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Topology {
     pub fn new() -> Self {
         Self {
@@ -32,7 +39,13 @@ impl Topology {
         self.machines.insert(name, pos);
     }
 
-    pub fn detect_edge(&self, _machine: &str, _x: i32, _y: i32, _screen_width: u32) -> Option<Edge> {
+    pub fn detect_edge(
+        &self,
+        _machine: &str,
+        _x: i32,
+        _y: i32,
+        _screen_width: u32,
+    ) -> Option<Edge> {
         // Implementation placeholder
         None
     }
