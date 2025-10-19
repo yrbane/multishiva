@@ -3,6 +3,7 @@ use multishiva::cli;
 use multishiva::core::config::{Config, ConfigMode};
 use multishiva::core::focus::FocusManager;
 use multishiva::core::network::Network;
+use multishiva::core::permissions;
 use multishiva::core::simulation::SimulationMode;
 use multishiva::core::topology::{Edge, Position, Topology};
 use tokio::signal;
@@ -44,6 +45,28 @@ async fn main() -> Result<()> {
     if args.simulate {
         run_simulation_mode(config, topology).await?;
     } else {
+        // Check system permissions before starting in production mode
+        tracing::info!("Checking system permissions...");
+        match permissions::check_permissions() {
+            Ok(status) => {
+                if status.is_granted() {
+                    tracing::info!("✓ All required permissions granted");
+                } else {
+                    let missing = status.missing_permissions();
+                    tracing::warn!("⚠️  Missing permissions: {}", missing.join(", "));
+                    tracing::warn!("\n{}", permissions::get_permission_help());
+                    tracing::warn!(
+                        "MultiShiva may not function correctly without proper permissions."
+                    );
+                    tracing::warn!("Continuing anyway...");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Could not check permissions: {}", e);
+                tracing::warn!("Continuing anyway...");
+            }
+        }
+
         run_production_mode(config, topology).await?;
     }
 

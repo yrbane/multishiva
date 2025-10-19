@@ -5,6 +5,27 @@ All notable changes to MultiShiva will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-10-19
+
+### Added
+- **System Permissions Verification**: Multi-OS permission checking
+  - macOS: Accessibility API permission detection
+  - Linux: uinput and input group verification
+  - Windows: Administrator privilege check
+  - Automatic permission check on startup (production mode only)
+  - Detailed help messages for fixing permissions on each OS
+  - `permissions` module with `PermissionStatus` enum
+  - 4 comprehensive tests for permission module
+
+### Changed
+- Main application now checks permissions before starting in production mode
+- Helpful warning messages displayed if permissions are missing
+- Application continues to run even with missing permissions (with warnings)
+
+### Documentation
+- Added OS-specific permission setup instructions
+- Help text includes command-line examples for fixing permissions
+
 ## [0.2.0] - 2025-10-19
 
 ### Added
