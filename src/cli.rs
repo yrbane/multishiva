@@ -26,6 +26,10 @@ pub struct Args {
     /// Enable simulation mode (for testing)
     #[arg(long, env = "MULTISHIVA_SIMULATE")]
     pub simulate: bool,
+
+    /// Host address for agent mode (e.g., "192.168.1.100:53421")
+    #[arg(long, env = "MULTISHIVA_HOST")]
+    pub host: Option<String>,
 }
 
 /// Operation mode for MultiShiva
@@ -105,6 +109,7 @@ mod tests {
             config: None,
             gui: true,
             simulate: true,
+            host: None,
         };
         assert!(args.validate().is_err());
     }
@@ -116,6 +121,7 @@ mod tests {
             config: None,
             gui: true,
             simulate: false,
+            host: None,
         };
         assert!(args.validate().is_err());
     }
@@ -127,6 +133,7 @@ mod tests {
             config: Some("config.yml".to_string()),
             gui: false,
             simulate: false,
+            host: None,
         };
         assert!(args.validate().is_ok());
     }
@@ -138,6 +145,7 @@ mod tests {
             config: Some("config.yml".to_string()),
             gui: false,
             simulate: false,
+            host: None,
         };
         assert!(args.validate().is_ok());
     }
@@ -149,6 +157,7 @@ mod tests {
             config: None,
             gui: false,
             simulate: true,
+            host: None,
         };
         assert!(args.validate().is_ok());
     }
@@ -160,6 +169,7 @@ mod tests {
             config: None,
             gui: true,
             simulate: false,
+            host: None,
         };
         assert!(args.validate().is_ok());
     }

@@ -57,6 +57,28 @@ async fn main() -> Result<()> {
             e
         }
     })?;
+
+    // Override config mode with CLI argument if provided
+    let mut config = config;
+    if let Some(cli_mode) = args.mode {
+        let config_mode = match cli_mode {
+            cli::Mode::Host => multishiva::core::config::ConfigMode::Host,
+            cli::Mode::Agent => multishiva::core::config::ConfigMode::Agent,
+        };
+        tracing::info!("CLI mode override: {:?} -> {:?}", config.mode, config_mode);
+        config.mode = config_mode;
+    }
+
+    // Override host address with CLI argument if provided
+    if let Some(host_address) = args.host {
+        tracing::info!(
+            "CLI host address override: {:?} -> {}",
+            config.host_address,
+            host_address
+        );
+        config.host_address = Some(host_address);
+    }
+
     config.validate()?;
 
     tracing::info!("Configuration loaded from: {}", config_path);
