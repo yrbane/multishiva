@@ -249,6 +249,13 @@ impl Discovery {
             .to_string_lossy()
             .to_string();
 
+        // mDNS requires hostname to end with .local.
+        let mdns_hostname = if hostname.ends_with(".local.") {
+            hostname
+        } else {
+            format!("{}.local.", hostname)
+        };
+
         // Build properties including PSK hash
         let mut props = properties;
         if let Some(hash) = psk_hash {
@@ -259,7 +266,7 @@ impl Discovery {
         let service_info = ServiceInfo::new(
             SERVICE_TYPE,
             &self.service_name,
-            &hostname,
+            &mdns_hostname,
             "", // Address will be auto-detected
             port,
             Some(props),
