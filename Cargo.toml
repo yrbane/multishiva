@@ -9,6 +9,10 @@ license = "MIT"
 keywords = ["kvm", "network", "tls", "input-sharing"]
 categories = ["network-programming", "gui"]
 
+[lib]
+name = "multishiva"
+path = "src/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }

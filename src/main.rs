@@ -1,8 +1,8 @@
 use anyhow::Result;
 use tracing_subscriber;
 
-mod cli;
-mod core;
+pub mod cli;
+pub mod core;
 
 #[tokio::main]
 async fn main() -> Result<()> {
