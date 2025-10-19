@@ -1,0 +1,51 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Tauri
+gui/dist/
+gui/node_modules/
+gui/.next/
+gui/out/
+
+# Config locale
+*.local.yaml
+config.local.yaml
+
+# Logs
+logs/
+*.log
+
+# Documentation privée (notes de développement)
+CLAUDE.md
+notes/
+dev-notes/
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+!tls/*.key
+
+# Coverage
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Benchmarks
+target/criterion/
