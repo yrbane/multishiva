@@ -4,7 +4,6 @@
 #[tokio::test]
 async fn test_integration_smoke() {
     // Basic smoke test to ensure integration tests can run
-    assert!(true);
 }
 
 #[tokio::test]
@@ -15,5 +14,4 @@ async fn test_host_agent_connection() {
     // 2. Connect agent
     // 3. Transfer focus
     // 4. Send events
-    assert!(true);
 }

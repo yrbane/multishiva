@@ -2,6 +2,7 @@
 
 ### *"Many arms. One mind."*
 
+[![CI](https://github.com/yrbane/multishiva/workflows/CI/badge.svg)](https://github.com/yrbane/multishiva/actions)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TDD](https://img.shields.io/badge/Development-TDD-green.svg)](https://github.com/yrbane/multishiva)

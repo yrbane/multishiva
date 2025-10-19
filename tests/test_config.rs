@@ -1,6 +1,6 @@
 use multishiva::core::config::Config;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 #[test]
 fn test_config_load_valid() {

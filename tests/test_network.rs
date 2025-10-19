@@ -2,9 +2,8 @@ use multishiva::core::network::Network;
 
 #[tokio::test]
 async fn test_network_creation() {
-    let network = Network::new();
+    let _network = Network::new();
     // Basic smoke test - just verify we can create a Network instance
-    drop(network);
 }
 
 #[tokio::test]

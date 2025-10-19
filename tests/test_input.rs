@@ -2,9 +2,8 @@ use multishiva::core::input::{InputHandler, RdevInputHandler};
 
 #[test]
 fn test_input_handler_creation() {
-    let handler = RdevInputHandler::new();
+    let _handler = RdevInputHandler::new();
     // Basic smoke test
-    drop(handler);
 }
 
 #[test]

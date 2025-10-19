@@ -1,10 +1,9 @@
-use multishiva::core::topology::{Topology, Position, Edge};
+use multishiva::core::topology::{Position, Topology};
 
 #[test]
 fn test_topology_creation() {
-    let topology = Topology::new();
+    let _topology = Topology::new();
     // Basic smoke test
-    drop(topology);
 }
 
 #[test]

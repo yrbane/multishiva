@@ -1,9 +1,7 @@
 use anyhow::Result;
+use multishiva::cli;
 
-pub mod cli;
-pub mod core;
-
-#[cfg_attr(not(test), tokio::main)]
+#[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
