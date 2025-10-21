@@ -110,8 +110,8 @@ impl PeerInfo {
 
     /// Returns the full network address in "IP:port" format.
     ///
-    /// This is a convenience method for displaying or logging the peer's
-    /// complete network address.
+    /// For IPv6 addresses, the IP is wrapped in brackets to ensure proper parsing.
+    /// This format is compatible with `TcpStream::connect()` and similar functions.
     ///
     /// # Examples
     ///
@@ -119,15 +119,27 @@ impl PeerInfo {
     /// use std::net::IpAddr;
     /// use multishiva::core::discovery::PeerInfo;
     ///
-    /// let peer = PeerInfo::new(
+    /// // IPv4 address
+    /// let peer_v4 = PeerInfo::new(
     ///     "agent".to_string(),
     ///     "10.0.0.5".parse::<IpAddr>().unwrap(),
     ///     3000,
     /// );
-    /// assert_eq!(peer.full_address(), "10.0.0.5:3000");
+    /// assert_eq!(peer_v4.full_address(), "10.0.0.5:3000");
+    ///
+    /// // IPv6 address (wrapped in brackets)
+    /// let peer_v6 = PeerInfo::new(
+    ///     "agent".to_string(),
+    ///     "2001:db8::1".parse::<IpAddr>().unwrap(),
+    ///     3000,
+    /// );
+    /// assert_eq!(peer_v6.full_address(), "[2001:db8::1]:3000");
     /// ```
     pub fn full_address(&self) -> String {
-        format!("{}:{}", self.address, self.port)
+        match self.address {
+            IpAddr::V4(addr) => format!("{}:{}", addr, self.port),
+            IpAddr::V6(addr) => format!("[{}]:{}", addr, self.port),
+        }
     }
 }
 
@@ -639,6 +651,25 @@ mod tests {
             peer.properties.get("mode").map(|s| s.as_str()),
             Some("agent")
         );
+    }
+
+    #[test]
+    fn test_peer_info_ipv6_address_format() {
+        // Test IPv6 address formatting with brackets
+        let peer_v6 = PeerInfo::new(
+            "agent-v6".to_string(),
+            "2001:db8::1".parse().unwrap(),
+            53421,
+        );
+
+        // IPv6 addresses should be wrapped in brackets
+        assert_eq!(peer_v6.full_address(), "[2001:db8::1]:53421");
+
+        // Test link-local IPv6
+        let peer_v6_local =
+            PeerInfo::new("agent-local".to_string(), "fe80::1".parse().unwrap(), 8080);
+
+        assert_eq!(peer_v6_local.full_address(), "[fe80::1]:8080");
     }
 
     #[test]
