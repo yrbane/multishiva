@@ -109,10 +109,20 @@ impl Network {
     /// - Unable to bind to the specified address
     /// - Cannot retrieve the local address from the listener
     pub async fn start_host(&mut self, port: u16) -> Result<u16> {
-        let addr = format!("127.0.0.1:{}", port);
-        let listener = TcpListener::bind(&addr)
-            .await
-            .context("Failed to bind to address")?;
+        // Try to bind on IPv6 dual-stack first (supports both IPv4 and IPv6)
+        // Falls back to IPv4-only if IPv6 is not available
+        let listener = match TcpListener::bind(format!("[::]:{}", port)).await {
+            Ok(listener) => {
+                tracing::debug!("Bound to IPv6 dual-stack address [::]:{}", port);
+                listener
+            }
+            Err(_) => {
+                tracing::debug!("IPv6 not available, falling back to IPv4");
+                TcpListener::bind(format!("0.0.0.0:{}", port))
+                    .await
+                    .context("Failed to bind to address")?
+            }
+        };
 
         let actual_port = listener.local_addr()?.port();
         self.running.store(true, Ordering::SeqCst);
