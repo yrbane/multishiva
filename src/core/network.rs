@@ -194,10 +194,27 @@ impl Network {
     /// - PSK handshake fails (invalid or mismatched PSK)
     /// - Fingerprint verification fails (potential MITM attack)
     pub async fn connect_to_host(&self, addr: &str) -> Result<()> {
-        let mut stream = tokio::time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr))
-            .await
-            .context("Connection timeout")?
-            .context("Failed to connect to host")?;
+        tracing::debug!("Attempting to connect to host at: {}", addr);
+
+        let mut stream =
+            match tokio::time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(addr)).await {
+                Ok(Ok(stream)) => {
+                    tracing::debug!("TCP connection established to {}", addr);
+                    stream
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("TCP connection failed to {}: {:?}", addr, e);
+                    return Err(e).context("Failed to connect to host");
+                }
+                Err(_) => {
+                    tracing::error!(
+                        "Connection timeout after {:?} to {}",
+                        CONNECTION_TIMEOUT,
+                        addr
+                    );
+                    anyhow::bail!("Connection timeout");
+                }
+            };
 
         // Perform PSK handshake and get machine name
         let machine_name = perform_psk_handshake(&mut stream, &self.psk, false)
