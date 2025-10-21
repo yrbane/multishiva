@@ -1,0 +1,30 @@
+# MultiShiva Agent Configuration (Complete)
+# This is a complete agent configuration example
+
+version: 1
+self_name: "mac-agent"
+mode: agent
+port: 53421
+
+# Specify the Linux host address directly
+host_address: "192.168.1.126:53421"
+
+# TLS Pre-Shared Key - MUST be identical to the host
+tls:
+  psk: "change-this-to-a-secure-random-string"
+
+# Define the topology from this agent's perspective
+# This tells MultiShiva which machines are adjacent
+edges:
+  left: "host"  # The host machine is to the left of this agent
+
+# Optional: Hotkeys
+hotkeys:
+  focus_return: "Cmd+Alt+H"  # Return focus to host (Mac uses Cmd)
+  kill_switch: "Cmd+Alt+K"   # Emergency stop
+
+# Optional: Behavior tuning
+behavior:
+  edge_threshold_px: 10      # Distance from edge to trigger switch (pixels)
+  friction_ms: 100           # Delay before switching (milliseconds)
+  reconnect_delay_ms: 5000   # Time to wait before reconnecting (milliseconds)
