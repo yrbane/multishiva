@@ -431,12 +431,15 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
                                     _ => (*x, *y),
                                 };
 
-                                tracing::debug!(
-                                    "Exit position: ({}, {}), Entry position on agent: ({}, {})",
+                                tracing::warn!(
+                                    "🔍 EXIT EDGE: {} at host position ({}, {}), calculated ENTRY position on agent: ({}, {}), screen={}x{}",
+                                    edge_name,
                                     x,
                                     y,
                                     entry_x,
-                                    entry_y
+                                    entry_y,
+                                    screen_size.0,
+                                    screen_size.1
                                 );
 
                                 // Send FocusGrant event with entry position
@@ -560,19 +563,20 @@ async fn run_agent_mode(
 
                 // Check if we're receiving focus
                 if let multishiva::core::events::Event::FocusGrant { target: _, x, y } = event {
-                    tracing::info!("▶ Received focus from host at position ({}, {})", x, y);
+                    tracing::warn!("🎯 RECEIVED FocusGrant with entry position ({}, {})", x, y);
                     has_focus = true;
 
                     // Set initial position
                     current_position = Some((x, y));
                     last_host_position = Some((x, y));
 
+                    tracing::warn!("🖱️ INJECTING initial MouseMove to ({}, {})", x, y);
                     // FocusGrant is not directly injectable, so we convert it to a MouseMove
                     let move_event = multishiva::core::events::Event::MouseMove { x, y };
                     if let Err(e) = input_handler.inject_event(move_event).await {
-                        tracing::error!("Failed to position cursor: {}", e);
+                        tracing::error!("❌ Failed to position cursor: {}", e);
                     } else {
-                        tracing::info!("✓ Cursor positioned at ({}, {})", x, y);
+                        tracing::warn!("✅ Cursor INJECTED at ({}, {})", x, y);
                     }
                     continue;
                 }
@@ -589,8 +593,8 @@ async fn run_agent_mode(
                             let new_x = curr_x + delta_x;
                             let new_y = curr_y + delta_y;
 
-                            tracing::trace!(
-                                "Host moved from ({}, {}) to ({}, {}), delta=({}, {}), applying to current ({}, {}) → new ({}, {})",
+                            tracing::warn!(
+                                "🔄 DELTA: host ({},{}) → ({},{}), Δ=({},{}), agent ({},{}) → ({},{})",
                                 last_x, last_y, host_x, host_y, delta_x, delta_y, curr_x, curr_y, new_x, new_y
                             );
 
