@@ -13,7 +13,7 @@ async fn test_integration_host_agent_communication() {
     let mut agent_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect agent
@@ -152,7 +152,7 @@ async fn test_integration_multiple_agents_with_focus() {
     let mut agent2_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect agents
@@ -199,7 +199,7 @@ async fn test_integration_event_serialization_over_network() {
     let mut agent_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect agent
@@ -372,7 +372,7 @@ async fn test_integration_complete_workflow() {
     let mut host_network = Network::new(config.tls.psk.clone());
     let mut agent_network = Network::new(config.tls.psk.clone());
 
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     agent_network

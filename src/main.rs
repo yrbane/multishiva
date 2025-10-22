@@ -280,16 +280,6 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
 
     let mut network = Network::new(config.tls.psk.clone());
 
-    // Start host server
-    let actual_port = network.start_host(config.port).await?;
-    tracing::info!("✓ Host listening on port {}", actual_port);
-
-    // Register this host on mDNS for auto-discovery
-    tracing::info!("📡 Registering host on mDNS for auto-discovery...");
-    let discovery = Discovery::new(config.self_name.clone())?;
-    discovery.register(actual_port, None, HashMap::new())?;
-    tracing::info!("✓ Host registered on mDNS as '{}'", config.self_name);
-
     // Log topology
     for (edge_name, neighbor_name) in &config.edges {
         tracing::info!("🔗 Topology: {} at edge {}", neighbor_name, edge_name);
@@ -312,8 +302,18 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
     tracing::info!("🖱️  Starting mouse/keyboard capture...");
-    input_handler.start_capture(event_tx).await?;
+    input_handler.start_capture(event_tx.clone()).await?;
     tracing::info!("✓ Input capture started");
+
+    // Pass event_tx to network so agents can send events back (like FocusRelease)
+    let actual_port = network.start_host(config.port, Some(event_tx)).await?;
+    tracing::info!("✓ Host listening on port {}", actual_port);
+
+    // Register this host on mDNS for auto-discovery
+    tracing::info!("📡 Registering host on mDNS for auto-discovery...");
+    let discovery = Discovery::new(config.self_name.clone())?;
+    discovery.register(actual_port, None, HashMap::new())?;
+    tracing::info!("✓ Host registered on mDNS as '{}'", config.self_name);
 
     let screen_size = input_handler.get_screen_size();
     tracing::info!("📺 Screen size: {}x{}", screen_size.0, screen_size.1);
@@ -341,6 +341,21 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
         tokio::select! {
             Some(event) = event_rx.recv() => {
                 event_count += 1;
+
+                // Check if we received a FocusRelease from remote
+                if matches!(event, multishiva::core::events::Event::FocusRelease) {
+                    tracing::info!("◀ Focus returned from remote machine");
+                    focus_target = None;
+
+                    // Ungrab devices to allow local input again
+                    #[cfg(target_os = "linux")]
+                    {
+                        if let Err(e) = input_handler.ungrab_devices() {
+                            tracing::error!("Failed to ungrab devices: {}", e);
+                        }
+                    }
+                    continue;
+                }
 
                 // If focus is on remote machine, send ALL events there
                 if let Some(ref target) = focus_target {
@@ -415,6 +430,14 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
                                     // Transfer focus to remote machine
                                     focus_target = Some(neighbor.clone());
                                     tracing::info!("✓ Focus transferred to '{}'", neighbor);
+
+                                    // Grab devices on Linux to block local input
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        if let Err(e) = input_handler.grab_devices() {
+                                            tracing::error!("Failed to grab devices: {}", e);
+                                        }
+                                    }
                                 }
                             } else {
                                 tracing::debug!("No neighbor configured on {} edge", edge_name);
@@ -468,8 +491,36 @@ async fn run_agent_mode(
         }
     };
 
+    // Create a separate input handler for local capture (to detect edge crossing)
+    #[cfg(target_os = "linux")]
+    let mut local_input_handler = {
+        use multishiva::core::input_evdev::EvdevInputHandler;
+        EvdevInputHandler::new()?
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let mut local_input_handler = {
+        use multishiva::core::input::RdevInputHandler;
+        RdevInputHandler::new()
+    };
+
+    let (local_event_tx, mut local_event_rx) = tokio::sync::mpsc::channel(100);
+    local_input_handler.start_capture(local_event_tx).await?;
+
+    let screen_size = local_input_handler.get_screen_size();
+    tracing::info!("📺 Screen size: {}x{}", screen_size.0, screen_size.1);
+
+    let edge_threshold = config
+        .behavior
+        .as_ref()
+        .and_then(|b| b.edge_threshold_px)
+        .unwrap_or(10) as i32;
+
     tracing::info!("✓ Input injection ready");
     tracing::info!("Waiting for events from host...");
+
+    // Track whether we currently have focus
+    let mut has_focus = false;
 
     // Event receiving loop
     let ctrl_c = signal::ctrl_c();
@@ -480,11 +531,40 @@ async fn run_agent_mode(
             Some(event) = network.receive_event() => {
                 tracing::debug!("Received event from host: {:?}", event);
 
+                // Check if we're receiving focus
+                if matches!(event, multishiva::core::events::Event::FocusGrant { .. }) {
+                    tracing::info!("▶ Received focus from host");
+                    has_focus = true;
+                }
+
                 // Inject event locally
                 if let Err(e) = input_handler.inject_event(event.clone()).await {
                     tracing::error!("Failed to inject event: {}", e);
                 } else {
                     tracing::trace!("✓ Event injected: {:?}", event);
+                }
+            }
+            Some(local_event) = local_event_rx.recv() => {
+                // Monitor local mouse movement to detect edge crossing (return to host)
+                if has_focus {
+                    if let multishiva::core::events::Event::MouseMove { x, y } = &local_event {
+                        tracing::trace!("Local mouse position: ({}, {})", x, y);
+
+                        // Check if mouse reached the right edge (opposite from where we entered)
+                        let at_right = *x > (screen_size.0 as i32 - edge_threshold);
+
+                        if at_right {
+                            tracing::info!("🚀 Right edge reached! Returning focus to host");
+
+                            // Send FocusRelease back to host
+                            if let Err(e) = network.send_event_to_host(multishiva::core::events::Event::FocusRelease).await {
+                                tracing::error!("Failed to send FocusRelease: {}", e);
+                            } else {
+                                has_focus = false;
+                                tracing::info!("✓ Focus released back to host");
+                            }
+                        }
+                    }
                 }
             }
             _ = &mut ctrl_c => {
@@ -495,6 +575,7 @@ async fn run_agent_mode(
     }
 
     tracing::info!("Agent stopping...");
+    local_input_handler.stop_capture().await;
     network.stop().await;
     tracing::info!("Agent stopped");
 

@@ -47,6 +47,9 @@ pub struct Network {
     connection_count: Arc<AtomicUsize>,
     event_tx: Arc<RwLock<Option<mpsc::Sender<Event>>>>,
     event_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
+    // Second channel for agent→host communication (bidirectional)
+    agent_tx: Arc<RwLock<Option<mpsc::Sender<Event>>>>,
+    agent_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
     fingerprint_store: Arc<Mutex<FingerprintStore>>,
 }
 
@@ -66,6 +69,7 @@ impl Network {
     /// ```
     pub fn new(psk: String) -> Self {
         let (tx, rx) = mpsc::channel(100);
+        let (agent_tx, agent_rx) = mpsc::channel(100);
         let fingerprint_store = FingerprintStore::load_default().unwrap_or_else(|e| {
             tracing::warn!("Could not load fingerprint store: {}. Creating new one.", e);
             FingerprintStore::new(FingerprintStore::default_path()).unwrap()
@@ -78,6 +82,8 @@ impl Network {
             connection_count: Arc::new(AtomicUsize::new(0)),
             event_tx: Arc::new(RwLock::new(Some(tx))),
             event_rx: Arc::new(RwLock::new(Some(rx))),
+            agent_tx: Arc::new(RwLock::new(Some(agent_tx))),
+            agent_rx: Arc::new(RwLock::new(Some(agent_rx))),
             fingerprint_store: Arc::new(Mutex::new(fingerprint_store)),
         }
     }
@@ -108,7 +114,17 @@ impl Network {
     /// - The port is already in use
     /// - Unable to bind to the specified address
     /// - Cannot retrieve the local address from the listener
-    pub async fn start_host(&mut self, port: u16) -> Result<u16> {
+    ///
+    /// # Parameters
+    ///
+    /// - `port`: The port number to bind to
+    /// - `input_event_tx`: Optional sender for forwarding agent events (like FocusRelease)
+    ///   back to the host's input event loop for processing
+    pub async fn start_host(
+        &mut self,
+        port: u16,
+        input_event_tx: Option<mpsc::Sender<Event>>,
+    ) -> Result<u16> {
         // Try to bind on IPv6 dual-stack first (supports both IPv4 and IPv6)
         // Falls back to IPv4-only if IPv6 is not available
         let listener = match TcpListener::bind(format!("[::]:{}", port)).await {
@@ -131,6 +147,7 @@ impl Network {
         let connection_count = self.connection_count.clone();
         let psk = self.psk.clone();
         let event_rx = self.event_rx.clone();
+        let input_event_tx = Arc::new(input_event_tx);
 
         // Spawn host listener task
         tokio::spawn(async move {
@@ -145,9 +162,12 @@ impl Network {
                         let psk = psk.clone();
                         let connection_count = connection_count.clone();
                         let event_rx = event_rx.clone();
+                        let input_event_tx = input_event_tx.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client(stream, psk, event_rx).await {
+                            if let Err(e) =
+                                handle_client(stream, psk, event_rx, input_event_tx).await
+                            {
                                 tracing::error!("Client handler error: {}", e);
                             }
                             connection_count.fetch_sub(1, Ordering::SeqCst);
@@ -253,15 +273,31 @@ impl Network {
         let connected = self.connected.clone();
         let psk = self.psk.clone();
         let event_tx = self.event_tx.clone();
+        let agent_rx = self.agent_rx.clone();
 
         // Spawn connection handler
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, psk, connected.clone(), event_tx).await {
+            if let Err(e) =
+                handle_connection(stream, psk, connected.clone(), event_tx, agent_rx).await
+            {
                 tracing::error!("Connection handler error: {}", e);
             }
             connected.store(false, Ordering::SeqCst);
         });
 
+        Ok(())
+    }
+
+    /// Sends an event from agent back to host (for bidirectional communication).
+    ///
+    /// This is used by the agent to send events like FocusRelease back to the host.
+    pub async fn send_event_to_host(&self, event: Event) -> Result<()> {
+        let tx_guard = self.agent_tx.read().await;
+        if let Some(tx) = tx_guard.as_ref() {
+            tx.send(event)
+                .await
+                .context("Failed to send event to host channel")?;
+        }
         Ok(())
     }
 
@@ -499,6 +535,7 @@ async fn handle_client(
     mut stream: TcpStream,
     psk: String,
     event_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
+    input_event_tx: Arc<Option<mpsc::Sender<Event>>>,
 ) -> Result<()> {
     // Perform PSK handshake and get machine name
     let machine_name = match perform_psk_handshake(&mut stream, &psk, true).await {
@@ -514,7 +551,7 @@ async fn handle_client(
     // Split stream for concurrent read/write (takes ownership)
     let (mut read_half, mut write_half) = stream.into_split();
 
-    // Spawn task to send events from channel to client
+    // Spawn task to send events from host to client
     let send_task = tokio::spawn(async move {
         let mut rx_guard = event_rx.write().await;
         if let Some(rx) = rx_guard.as_mut() {
@@ -544,18 +581,47 @@ async fn handle_client(
         tracing::info!("Send task ending for client");
     });
 
-    // Receive heartbeats from client
+    // Receive events from client (including heartbeats)
     let receive_task = tokio::spawn(async move {
-        let mut heartbeat_buf = [0u8; 4];
         loop {
-            match tokio::time::timeout(
-                Duration::from_secs(15),
-                read_half.read_exact(&mut heartbeat_buf),
-            )
-            .await
+            let mut len_buf = [0u8; 4];
+            match tokio::time::timeout(Duration::from_secs(15), read_half.read_exact(&mut len_buf))
+                .await
             {
                 Ok(Ok(_)) => {
-                    tracing::trace!("Received heartbeat from client");
+                    let len = u32::from_be_bytes(len_buf) as usize;
+
+                    // Length 0 = heartbeat, ignore
+                    if len == 0 {
+                        tracing::trace!("Received heartbeat from client");
+                        continue;
+                    }
+
+                    // Read event data
+                    let mut data = vec![0u8; len];
+                    match read_half.read_exact(&mut data).await {
+                        Ok(_) => {
+                            // Deserialize event
+                            match rmp_serde::from_slice::<Event>(&data) {
+                                Ok(event) => {
+                                    tracing::debug!("Received event from agent: {:?}", event);
+                                    // Forward to host's input event loop if available
+                                    if let Some(ref tx) = *input_event_tx {
+                                        if tx.send(event).await.is_err() {
+                                            tracing::warn!("Failed to forward agent event to host");
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to deserialize event: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to read event data: {}", e);
+                            break;
+                        }
+                    }
                 }
                 Ok(Err(e)) => {
                     tracing::warn!("Client disconnected: {}", e);
@@ -584,38 +650,89 @@ async fn handle_connection(
     _psk: String,
     connected: Arc<AtomicBool>,
     event_tx: Arc<RwLock<Option<mpsc::Sender<Event>>>>,
+    agent_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
 ) -> Result<()> {
-    tracing::info!("Agent connected to host, receiving events...");
+    tracing::info!("Agent connected to host, bidirectional communication enabled...");
 
     // Split stream for concurrent read/write (takes ownership)
     let (mut read_half, mut write_half) = stream.into_split();
 
-    // Clone connected for heartbeat task
-    let connected_heartbeat = connected.clone();
+    // Clone connected for tasks
+    let connected_send = connected.clone();
+    let connected_recv = connected.clone();
 
-    // Spawn heartbeat task
-    let heartbeat_task = tokio::spawn(async move {
-        while connected_heartbeat.load(Ordering::SeqCst) {
-            // Send heartbeat (4 zero bytes)
-            if write_half.write_all(&[0u8; 4]).await.is_err() {
-                tracing::warn!("Failed to send heartbeat, disconnected");
+    // Task 1: Send events from agent back to host (including heartbeats)
+    let send_task = tokio::spawn(async move {
+        let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
+        heartbeat_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        let mut rx_guard = agent_rx.write().await;
+
+        loop {
+            tokio::select! {
+                _ = heartbeat_interval.tick() => {
+                    // Send heartbeat (4 zero bytes = length 0)
+                    if write_half.write_all(&[0u8; 4]).await.is_err() {
+                        tracing::warn!("Failed to send heartbeat, disconnected");
+                        break;
+                    }
+                }
+                Some(event) = async {
+                    if let Some(ref mut r) = *rx_guard {
+                        r.recv().await
+                    } else {
+                        None
+                    }
+                } => {
+                    tracing::debug!("Sending event to host: {:?}", event);
+
+                    // Serialize and send event
+                    match rmp_serde::to_vec(&event) {
+                        Ok(data) => {
+                            let len = data.len() as u32;
+                            if write_half.write_all(&len.to_be_bytes()).await.is_err() {
+                                tracing::warn!("Failed to write event length, disconnected");
+                                break;
+                            }
+                            if write_half.write_all(&data).await.is_err() {
+                                tracing::warn!("Failed to write event data, disconnected");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to serialize event: {}", e);
+                        }
+                    }
+                }
+            }
+
+            if !connected_send.load(Ordering::SeqCst) {
                 break;
             }
-            sleep(HEARTBEAT_INTERVAL).await;
         }
-        tracing::debug!("Heartbeat task ending");
+        tracing::debug!("Send task ending");
     });
 
-    // Receive events from host
+    // Task 2: Receive events from host
     let receive_task = tokio::spawn(async move {
         let tx_guard = event_tx.read().await;
         if let Some(tx) = tx_guard.as_ref() {
             loop {
+                if !connected_recv.load(Ordering::SeqCst) {
+                    break;
+                }
+
                 // Read length prefix (4 bytes)
                 let mut len_buf = [0u8; 4];
                 match read_half.read_exact(&mut len_buf).await {
                     Ok(_) => {
                         let len = u32::from_be_bytes(len_buf) as usize;
+
+                        // Length 0 = heartbeat, ignore
+                        if len == 0 {
+                            tracing::trace!("Received heartbeat from host");
+                            continue;
+                        }
 
                         // Read event data
                         let mut data = vec![0u8; len];
@@ -655,7 +772,7 @@ async fn handle_connection(
 
     // Wait for either task to complete
     tokio::select! {
-        _ = heartbeat_task => {}
+        _ = send_task => {}
         _ = receive_task => {}
     }
 

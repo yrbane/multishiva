@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use evdev::{Device, EventType, InputEventKind, Key as EvdevKey};
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub struct EvdevInputHandler {
     capturing: Arc<AtomicBool>,
     devices: Vec<PathBuf>,
     mouse_position: Arc<std::sync::RwLock<(i32, i32)>>,
+    grabbed: Arc<AtomicBool>,
 }
 
 impl EvdevInputHandler {
@@ -45,6 +47,7 @@ impl EvdevInputHandler {
             devices,
             // Initialize mouse at center of screen (will be updated by real events)
             mouse_position: Arc::new(std::sync::RwLock::new((960, 540))),
+            grabbed: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -372,6 +375,83 @@ impl InputHandler for EvdevInputHandler {
     fn check_permissions(&self) -> bool {
         // Check if we can access /dev/input devices
         !self.devices.is_empty()
+    }
+}
+
+impl EvdevInputHandler {
+    /// Grabs all input devices exclusively, preventing other applications from receiving events.
+    ///
+    /// This is useful when transferring input focus to a remote machine - it prevents
+    /// the local OS from processing the events while we send them remotely.
+    pub fn grab_devices(&self) -> Result<()> {
+        if self.grabbed.load(Ordering::SeqCst) {
+            return Ok(()); // Already grabbed
+        }
+
+        for device_path in &self.devices {
+            match Device::open(device_path) {
+                Ok(device) => {
+                    // Use EVIOCGRAB ioctl to grab the device
+                    // EVIOCGRAB = 0x40044590 (IOW('E', 0x90, int))
+                    let fd = device.as_raw_fd();
+                    unsafe {
+                        const EVIOCGRAB: nix::libc::c_ulong = 0x40044590;
+                        // EVIOCGRAB with 1 = grab, 0 = release
+                        if nix::libc::ioctl(fd, EVIOCGRAB, 1) < 0 {
+                            tracing::warn!("Failed to grab device {:?}", device_path);
+                        } else {
+                            tracing::debug!("Grabbed device {:?}", device_path);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to open device {:?} for grabbing: {}",
+                        device_path,
+                        e
+                    );
+                }
+            }
+        }
+
+        self.grabbed.store(true, Ordering::SeqCst);
+        tracing::info!("🔒 Input devices grabbed - local input blocked");
+        Ok(())
+    }
+
+    /// Releases the exclusive grab on all input devices, allowing other applications to receive events again.
+    pub fn ungrab_devices(&self) -> Result<()> {
+        if !self.grabbed.load(Ordering::SeqCst) {
+            return Ok(()); // Not grabbed
+        }
+
+        for device_path in &self.devices {
+            match Device::open(device_path) {
+                Ok(device) => {
+                    let fd = device.as_raw_fd();
+                    unsafe {
+                        const EVIOCGRAB: nix::libc::c_ulong = 0x40044590;
+                        // EVIOCGRAB with 0 = release
+                        if nix::libc::ioctl(fd, EVIOCGRAB, 0) < 0 {
+                            tracing::warn!("Failed to ungrab device {:?}", device_path);
+                        } else {
+                            tracing::debug!("Ungrabbed device {:?}", device_path);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to open device {:?} for ungrabbing: {}",
+                        device_path,
+                        e
+                    );
+                }
+            }
+        }
+
+        self.grabbed.store(false, Ordering::SeqCst);
+        tracing::info!("🔓 Input devices released - local input enabled");
+        Ok(())
     }
 }
 

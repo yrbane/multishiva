@@ -14,7 +14,7 @@ async fn test_network_host_start_and_stop() {
     let mut network = Network::new("test-psk".to_string());
 
     // Start host on random available port
-    let result = network.start_host(0).await;
+    let result = network.start_host(0, None).await;
     assert!(result.is_ok());
 
     let port = result.unwrap();
@@ -30,7 +30,7 @@ async fn test_network_host_rejects_wrong_psk() {
     let agent_network = Network::new("wrong-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Agent with wrong PSK should fail to connect
@@ -51,7 +51,7 @@ async fn test_network_send_receive_event() {
     let mut agent_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
 
     // Give it a moment to start
     sleep(Duration::from_millis(100)).await;
@@ -80,7 +80,7 @@ async fn test_network_heartbeat() {
     let mut agent_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect agent
@@ -106,7 +106,7 @@ async fn test_network_reconnect_on_disconnect() {
     let agent_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect agent
@@ -133,7 +133,7 @@ async fn test_network_multiple_agents() {
     let mut agent2 = Network::new("shared-psk".to_string());
 
     // Start host
-    let port = host_network.start_host(0).await.unwrap();
+    let port = host_network.start_host(0, None).await.unwrap();
     sleep(Duration::from_millis(100)).await;
 
     // Connect multiple agents
@@ -167,7 +167,7 @@ async fn test_network_get_connection_count() {
     let mut host_network = Network::new("shared-psk".to_string());
 
     // Start host
-    let _port = host_network.start_host(0).await.unwrap();
+    let _port = host_network.start_host(0, None).await.unwrap();
 
     // Initially should have 0 connections
     assert_eq!(host_network.connection_count(), 0);
