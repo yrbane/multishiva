@@ -545,6 +545,10 @@ async fn run_agent_mode(
     // Track whether we currently have focus
     let mut has_focus = false;
 
+    // Track our current cursor position and last received position from host
+    let mut current_position: Option<(i32, i32)> = None;
+    let mut last_host_position: Option<(i32, i32)> = None;
+
     // Event receiving loop
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
@@ -559,6 +563,10 @@ async fn run_agent_mode(
                     tracing::info!("▶ Received focus from host at position ({}, {})", x, y);
                     has_focus = true;
 
+                    // Set initial position
+                    current_position = Some((x, y));
+                    last_host_position = Some((x, y));
+
                     // FocusGrant is not directly injectable, so we convert it to a MouseMove
                     let move_event = multishiva::core::events::Event::MouseMove { x, y };
                     if let Err(e) = input_handler.inject_event(move_event).await {
@@ -569,8 +577,39 @@ async fn run_agent_mode(
                     continue;
                 }
 
-                // Inject event locally (skip FocusRelease and Heartbeat as they're not injectable)
-                if !matches!(event, multishiva::core::events::Event::FocusRelease | multishiva::core::events::Event::Heartbeat) {
+                // Handle MouseMove with delta calculation when we have focus
+                if has_focus && matches!(event, multishiva::core::events::Event::MouseMove { .. }) {
+                    if let multishiva::core::events::Event::MouseMove { x: host_x, y: host_y } = event {
+                        if let (Some((curr_x, curr_y)), Some((last_x, last_y))) = (current_position, last_host_position) {
+                            // Calculate delta from host's movement
+                            let delta_x = host_x - last_x;
+                            let delta_y = host_y - last_y;
+
+                            // Apply delta to our current position
+                            let new_x = curr_x + delta_x;
+                            let new_y = curr_y + delta_y;
+
+                            tracing::trace!(
+                                "Host moved from ({}, {}) to ({}, {}), delta=({}, {}), applying to current ({}, {}) → new ({}, {})",
+                                last_x, last_y, host_x, host_y, delta_x, delta_y, curr_x, curr_y, new_x, new_y
+                            );
+
+                            // Update tracking
+                            current_position = Some((new_x, new_y));
+                            last_host_position = Some((host_x, host_y));
+
+                            // Inject the new position
+                            let move_event = multishiva::core::events::Event::MouseMove { x: new_x, y: new_y };
+                            if let Err(e) = input_handler.inject_event(move_event).await {
+                                tracing::error!("Failed to inject mouse movement: {}", e);
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                // Inject other events locally (skip FocusRelease and Heartbeat as they're not injectable)
+                if !matches!(event, multishiva::core::events::Event::FocusRelease | multishiva::core::events::Event::Heartbeat | multishiva::core::events::Event::MouseMove { .. }) {
                     if let Err(e) = input_handler.inject_event(event.clone()).await {
                         tracing::error!("Failed to inject event: {}", e);
                     } else {
