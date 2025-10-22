@@ -81,97 +81,83 @@ export default function StatusBar() {
   }
 
   return (
-    <div className="bg-gray-800 border-t border-gray-700">
+    <div className="relative backdrop-blur-xl bg-white/5 border-t border-white/10 shadow-2xl">
       {/* Main Status Bar */}
-      <div className="px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center space-x-6">
-          {/* Connection Status */}
+      <div className="px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {/* Connection Status - Modern pill */}
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center space-x-2 hover:bg-gray-700 px-2 py-1 rounded transition"
+            className="flex items-center gap-2 px-4 py-2 backdrop-blur-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-full transition-all duration-200 hover:scale-105"
           >
             <div className="relative">
               <div
-                className={`w-3 h-3 rounded-full ${
-                  status.connected ? 'bg-green-500' : 'bg-red-500'
+                className={`w-2.5 h-2.5 rounded-full ${
+                  status.connected ? 'bg-emerald-400 shadow-lg shadow-emerald-500/50' : 'bg-red-400 shadow-lg shadow-red-500/50'
                 }`}
               />
               {status.connected && (
-                <div className="absolute inset-0 w-3 h-3 rounded-full bg-green-500 animate-ping opacity-75" />
+                <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping opacity-60" />
               )}
             </div>
-            <span className="text-sm text-gray-300 font-medium">
-              {status.connected ? status.mode.toUpperCase() : 'Disconnected'}
+            <span className="text-sm font-semibold text-white">
+              {status.connected ? status.mode.toUpperCase() : 'OFFLINE'}
             </span>
-            <span className="text-xs text-gray-500">
-              {showDetails ? '▼' : '▶'}
+            <span className="text-xs text-slate-400">
+              {showDetails ? '▼' : '▸'}
             </span>
           </button>
 
-          {/* Active Machine */}
-          {status.activeMachine && (
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-gray-500">Active:</span>
-              <span className="text-sm text-blue-400 font-semibold">
-                {status.activeMachine}
-              </span>
+          {/* Stats Cards - Compact */}
+          <div className="flex items-center gap-3">
+            {status.activeMachine && (
+              <div className="flex items-center gap-2 px-3 py-1.5 backdrop-blur-sm bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <span className="text-xs text-purple-400 font-medium">Active:</span>
+                <span className="text-sm text-white font-semibold font-mono">{status.activeMachine}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 px-3 py-1.5 backdrop-blur-sm bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+              <span className="text-lg">💻</span>
+              <span className="text-sm font-bold text-white">{status.machinesConnected}</span>
             </div>
-          )}
 
-          {/* Connected Machines */}
-          <div className="flex items-center space-x-2">
-            <svg
-              className="w-4 h-4 text-gray-400"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-            </svg>
-            <span className="text-sm text-gray-400">
-              <span className="text-white font-semibold">{status.machinesConnected}</span>{' '}
-              {status.machinesConnected === 1 ? 'machine' : 'machines'}
-            </span>
+            <div className="flex items-center gap-2 px-3 py-1.5 backdrop-blur-sm bg-indigo-500/10 border border-indigo-500/30 rounded-lg">
+              <span className="text-lg">⚡</span>
+              <span className="text-sm font-bold font-mono text-white">{status.eventsPerSecond}</span>
+              <span className="text-xs text-slate-400">/s</span>
+            </div>
           </div>
 
-          {/* Event Rate */}
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Events/s:</span>
-            <span className="text-sm text-white font-mono font-semibold">
-              {status.eventsPerSecond}
-            </span>
-          </div>
-
-          {/* Feature Indicators */}
-          <div className="flex items-center space-x-3">
+          {/* Feature Badges */}
+          <div className="flex items-center gap-2">
             {status.features.mdnsActive && (
               <div
-                className="text-xs text-purple-400 px-2 py-1 bg-purple-900/30 rounded border border-purple-700/50"
+                className="text-xs font-medium text-purple-300 px-2 py-1 bg-purple-500/20 rounded-md border border-purple-500/30"
                 title="mDNS Discovery Active"
               >
-                mDNS
+                🌐 mDNS
               </div>
             )}
             {status.features.clipboardSync && (
               <div
-                className="text-xs text-cyan-400 px-2 py-1 bg-cyan-900/30 rounded border border-cyan-700/50"
+                className="text-xs font-medium text-cyan-300 px-2 py-1 bg-cyan-500/20 rounded-md border border-cyan-500/30"
                 title="Clipboard Sync Active"
               >
-                Clipboard
+                📋 Clipboard
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Side */}
-        <div className="flex items-center space-x-4">
-          <div className="text-xs text-gray-500">
-            Uptime: <span className="text-gray-400 font-mono">{formatUptime(status.uptime)}</span>
+        {/* Right Side - Compact */}
+        <div className="flex items-center gap-4">
+          <div className="text-xs font-mono text-slate-400">
+            ⏱ <span className="text-slate-300">{formatUptime(status.uptime)}</span>
           </div>
-          <div className="text-xs text-gray-500">MultiShiva v1.0.0</div>
+          <div className="text-xs font-semibold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
+            v1.2.0
+          </div>
         </div>
       </div>
 
