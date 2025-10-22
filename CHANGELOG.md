@@ -5,9 +5,38 @@ All notable changes to MultiShiva will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2025-10-19
+## [1.1.0] - 2025-10-22
 
 ### Added
+- **Native Wayland Support via evdev**: Linux-specific input handling for Wayland and X11
+  - New `input_evdev.rs` module with direct `/dev/input/event*` access
+  - Auto-detection of mouse and keyboard devices
+  - Relative event accumulation (REL_X, REL_Y) for accurate mouse tracking
+  - Proper async/blocking bridge between evdev threads and Tokio runtime
+  - Compatible with both Wayland and X11 display servers
+  - Requires user to be in `input` group
+
+- **Device Grabbing (Linux)**: Intelligent input blocking with EVIOCGRAB
+  - Exclusive device grab via EVIOCGRAB ioctl (0x40044590)
+  - Automatic grabbing when focus transfers to remote machine
+  - Prevents local OS from processing events while controlling remote
+  - Automatic ungrab when focus returns to host
+  - `grab_devices()` and `ungrab_devices()` methods in EvdevInputHandler
+
+- **Bidirectional Focus Control**: Seamless focus transfer in both directions
+  - Agent-side edge detection for automatic focus return
+  - New `FocusRelease` event sent from agent to host
+  - Second channel pair for agent→host communication (`agent_tx`/`agent_rx`)
+  - `send_event_to_host()` method for agent to send events back
+  - Host listens for `FocusRelease` and resumes local control
+  - Complete flow: Linux→Mac at left edge, Mac→Linux at right edge
+
+- **Enhanced Network Communication**: Full bidirectional event flow
+  - Host can now receive events from agents (not just send)
+  - Length-prefixed messages support both directions (4-byte BE + data)
+  - Heartbeat mechanism integrated with bidirectional channels
+  - `input_event_tx` parameter in `start_host()` for event forwarding
+
 - **Automatic Host Discovery via mDNS**: Zero-configuration agent mode
   - Agents can now auto-discover hosts on the network without specifying IP addresses
   - `discover_host_via_mdns()` function with 5-second timeout
@@ -22,15 +51,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CLI overrides are logged for debugging
   - Improved first-run experience with helpful error messages
 
+- **Linux Input System**: Platform-specific input handler selection
+  - Linux (Wayland/X11): Uses `EvdevInputHandler` by default
+  - macOS/Windows: Uses `RdevInputHandler` (unchanged)
+  - Conditional compilation with `#[cfg(target_os = "linux")]`
+
+- **Agent Mode**: Now monitors local input for focus return detection
+  - Creates separate input handler for local capture
+  - Detects right edge crossing when agent has focus
+  - Sends `FocusRelease` to return control to host
+
 ### Fixed
 - Fixed Tauri GUI module name reference (`app_lib` → `multishiva_gui_lib`)
 - Fixed mDNS hostname format requirement (hostnames must end with `.local.`)
 - Improved config file error message with step-by-step setup instructions
+- Fixed dual cursor movement issue (events now properly blocked on host when focus is remote)
+- Fixed evdev thread → tokio async boundary with proper channel bridging
+- Updated all test files to pass new `input_event_tx` parameter to `start_host()`
+
+### Security
+- Device grabbing prevents local input leakage when controlling remote machine
+- Proper cleanup of grabbed devices on focus return or application exit
 
 ### Documentation
 - Completed comprehensive rustdoc documentation for all modules (closes #23)
-- Added detailed examples and usage notes
-- Updated CLI tests to reflect new `host` parameter
+- Added detailed bidirectional focus transfer flow diagram in README
+- Documented Linux-specific requirements (input group membership)
+- Explained device grabbing mechanism and behavior
+- Updated roadmap: v1.1 marked as completed
+- Added visual ASCII flow diagram for Host↔Agent transitions
+- Enhanced architecture section with `input_evdev.rs` details
+
+### Technical Details
+- EVIOCGRAB ioctl constant: `0x40044590` (IOW('E', 0x90, int))
+- Event bridge pattern: std::sync::mpsc → tokio::mpsc with polling loop
+- Bidirectional network architecture with separate TX/RX channel pairs
+- MessagePack serialization for cross-platform event transmission
 
 ## [1.0.0] - 2025-10-19
 
