@@ -5,6 +5,64 @@ All notable changes to MultiShiva will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-10-22
+
+### Added
+- **Complete Tauri GUI Interface**: Full-featured graphical interface for configuration
+  - Visual topology editor with drag-and-drop machine positioning (similar to GNOME display settings)
+  - Interactive MachineGrid component for spatial screen layout configuration
+  - Real-time connection visualization with directional arrows
+  - Settings panel with tabbed interface (General, Hotkeys, Behavior)
+  - Live status bar with connection monitoring and network statistics
+  - Persistent configuration with load/save functionality
+
+- **Tauri Backend Commands**: Rust-powered configuration management
+  - `load_config()` - Load configuration from file system
+  - `save_config()` - Save configuration with validation
+  - `get_config_path()` - Get default config file path
+  - Direct integration with `multishiva::core::config` module
+
+- **MachineGrid Features**: Visual topology configuration
+  - Drag-and-drop machine positioning on canvas
+  - Add/remove machines dynamically
+  - Edge connection builder (left, right, top, bottom)
+  - Visual connection lines with arrows
+  - Color-coded machines (host: purple, agent: blue)
+  - Real-time topology summary display
+
+- **SettingsPanel Features**: Complete configuration interface
+  - Machine name and mode selection (host/agent)
+  - Network port configuration
+  - Host address for agent mode
+  - PSK (Pre-Shared Key) management with generator
+  - Hotkey configuration (focus return, kill switch)
+  - Behavior settings (edge threshold, friction, reconnect delay)
+  - Config file path display
+  - Auto-load on startup, manual reload available
+
+- **StatusBar Features**: Real-time monitoring
+  - Connection status indicator (connected/disconnected)
+  - Current mode display (host/agent)
+  - Active machine tracking
+  - Connected machines count
+  - Events per second counter
+  - Network statistics (bytes sent/received)
+  - Expandable details panel
+  - Uptime tracking
+  - Feature indicators (mDNS, clipboard sync)
+
+### Changed
+- GUI is now fully functional with all core features integrated
+- Configuration can be managed entirely through visual interface
+- Tauri app properly loads and saves to `~/.config/multishiva/multishiva.yml`
+
+### Technical Details
+- React + TypeScript frontend with TailwindCSS
+- Tauri 2.8.5 with Rust backend
+- Real-time config sync between GUI and Rust
+- Component-based architecture (App, MachineGrid, SettingsPanel, StatusBar)
+- Type-safe configuration with full validation
+
 ## [1.1.0] - 2025-10-22
 
 ### Added

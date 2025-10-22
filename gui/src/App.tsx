@@ -1,64 +1,72 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './App.css'
+import MachineGrid from './components/MachineGrid'
+import SettingsPanel from './components/SettingsPanel'
+import StatusBar from './components/StatusBar'
 
 function App() {
   const [version, setVersion] = useState<string>('')
-  const [greeting, setGreeting] = useState<string>('')
+  const [activeTab, setActiveTab] = useState<'topology' | 'settings'>('topology')
 
   useEffect(() => {
     // Get version from Tauri backend
     invoke<string>('get_version')
       .then((ver) => setVersion(ver))
       .catch((err) => console.error('Failed to get version:', err))
-
-    // Get greeting
-    invoke<string>('greet', { name: 'User' })
-      .then((msg) => setGreeting(msg))
-      .catch((err) => console.error('Failed to get greeting:', err))
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <div className="container mx-auto p-4">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">🕉️ MultiShiva</h1>
-          <p className="text-gray-400">Many arms. One mind. v{version}</p>
-          {greeting && <p className="text-green-400 mt-2">{greeting}</p>}
-        </header>
-
-        <main className="grid grid-cols-1 gap-6">
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <h2 className="text-2xl font-semibold mb-4">Welcome</h2>
-            <p className="text-gray-300">
-              Control multiple computers with one keyboard and mouse.
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+      {/* Header */}
+      <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <span>🕉️</span>
+              <span>MultiShiva</span>
+            </h1>
+            <p className="text-sm text-gray-400 mt-1">
+              Many arms. One mind. <span className="text-gray-500">v{version}</span>
             </p>
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <h3 className="text-xl font-semibold mb-4">Quick Start</h3>
-            <p className="text-gray-300 mb-2">GUI components coming soon...</p>
-            <ul className="list-disc list-inside text-gray-400">
-              <li>Machine Grid - Visual topology editor</li>
-              <li>Settings Panel - Configuration management</li>
-              <li>Status Bar - Real-time monitoring</li>
-            </ul>
+          {/* Tab Navigation */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('topology')}
+              className={`px-6 py-2 rounded-lg font-medium transition ${
+                activeTab === 'topology'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              📐 Topology
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`px-6 py-2 rounded-lg font-medium transition ${
+                activeTab === 'settings'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              ⚙️ Settings
+            </button>
           </div>
+        </div>
+      </header>
 
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <h3 className="text-xl font-semibold mb-4">Status</h3>
-            <p className="text-gray-300">
-              ✅ Tauri + React + TypeScript setup complete
-            </p>
-            <p className="text-gray-300">
-              ✅ TailwindCSS configured
-            </p>
-            <p className="text-gray-300">
-              ✅ Frontend ↔ Backend communication working
-            </p>
-          </div>
-        </main>
-      </div>
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-7xl mx-auto">
+          {activeTab === 'topology' && <MachineGrid />}
+          {activeTab === 'settings' && <SettingsPanel />}
+        </div>
+      </main>
+
+      {/* Status Bar (Fixed at bottom) */}
+      <StatusBar />
     </div>
   )
 }

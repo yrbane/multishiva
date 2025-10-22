@@ -1,65 +1,83 @@
 // SettingsPanel Component - Configuration management
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 
 interface Settings {
   version: number
-  selfName: string
+  self_name: string
   mode: 'host' | 'agent'
   port: number
-  hostAddress: string
-  psk: string
+  host_address: string | null
+  tls: {
+    psk: string
+  }
+  edges: Record<string, string>
   hotkeys: {
-    focusReturn: string
-    killSwitch: string
-  }
+    focus_return: string | null
+    kill_switch: string | null
+  } | null
   behavior: {
-    edgeThreshold: number
-    friction: number
-    reconnectDelay: number
-  }
-  features: {
-    mdnsDiscovery: boolean
-    clipboardSync: boolean
-  }
+    edge_threshold_px: number | null
+    friction_ms: number | null
+    reconnect_delay_ms: number | null
+  } | null
 }
 
 export default function SettingsPanel() {
   const [settings, setSettings] = useState<Settings>({
     version: 1,
-    selfName: 'multishiva',
+    self_name: 'multishiva',
     mode: 'host',
     port: 53421,
-    hostAddress: '',
-    psk: '',
+    host_address: null,
+    tls: {
+      psk: '',
+    },
+    edges: {},
     hotkeys: {
-      focusReturn: 'Ctrl+Alt+H',
-      killSwitch: 'Ctrl+Alt+K',
+      focus_return: 'Ctrl+Alt+H',
+      kill_switch: 'Ctrl+Alt+K',
     },
     behavior: {
-      edgeThreshold: 10,
-      friction: 100,
-      reconnectDelay: 5000,
-    },
-    features: {
-      mdnsDiscovery: true,
-      clipboardSync: true,
+      edge_threshold_px: 10,
+      friction_ms: 100,
+      reconnect_delay_ms: 5000,
     },
   })
 
   const [showPsk, setShowPsk] = useState(false)
-  const [activeTab, setActiveTab] = useState<'general' | 'hotkeys' | 'behavior' | 'features'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'hotkeys' | 'behavior'>('general')
   const [saved, setSaved] = useState(false)
+  const [configPath, setConfigPath] = useState<string>('')
 
-  const handleSave = () => {
-    // In real implementation, this would call Tauri commands to save config
-    console.log('Saving settings:', settings)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+  useEffect(() => {
+    // Load config path and initial settings
+    invoke<string>('get_config_path')
+      .then((path) => setConfigPath(path))
+      .catch((err) => console.error('Failed to get config path:', err))
+
+    handleLoad()
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      await invoke('save_config', { config: settings, customPath: null })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      console.error('Failed to save config:', err)
+      alert(`Failed to save configuration: ${err}`)
+    }
   }
 
-  const handleLoad = () => {
-    // In real implementation, this would call Tauri commands to load config
-    console.log('Loading settings...')
+  const handleLoad = async () => {
+    try {
+      const config = await invoke<Settings>('load_config', { customPath: null })
+      setSettings(config)
+    } catch (err) {
+      console.error('Failed to load config:', err)
+      // Keep default settings if load fails
+    }
   }
 
   const generatePsk = () => {
@@ -68,7 +86,7 @@ export default function SettingsPanel() {
     for (let i = 0; i < 32; i++) {
       psk += chars.charAt(Math.floor(Math.random() * chars.length))
     }
-    setSettings({ ...settings, psk })
+    setSettings({ ...settings, tls: { psk } })
   }
 
   return (
@@ -76,11 +94,14 @@ export default function SettingsPanel() {
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-semibold">Settings</h2>
         <div className="flex gap-2">
+          <div className="text-xs text-gray-500 mr-2 self-center">
+            Config: <span className="text-gray-400 font-mono text-[10px]">{configPath}</span>
+          </div>
           <button
             onClick={handleLoad}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm transition"
           >
-            Load
+            Reload
           </button>
           <button
             onClick={handleSave}
@@ -97,7 +118,7 @@ export default function SettingsPanel() {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-4 border-b border-gray-700">
-        {['general', 'hotkeys', 'behavior', 'features'].map((tab) => (
+        {['general', 'hotkeys', 'behavior'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as typeof activeTab)}
@@ -121,8 +142,8 @@ export default function SettingsPanel() {
             </label>
             <input
               type="text"
-              value={settings.selfName}
-              onChange={(e) => setSettings({ ...settings, selfName: e.target.value })}
+              value={settings.self_name}
+              onChange={(e) => setSettings({ ...settings, self_name: e.target.value })}
               className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
               placeholder="e.g., host, agent1, laptop"
             />
@@ -172,8 +193,8 @@ export default function SettingsPanel() {
               </label>
               <input
                 type="text"
-                value={settings.hostAddress}
-                onChange={(e) => setSettings({ ...settings, hostAddress: e.target.value })}
+                value={settings.host_address || ''}
+                onChange={(e) => setSettings({ ...settings, host_address: e.target.value || null })}
                 className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
                 placeholder="192.168.1.100:53421"
               />
@@ -191,8 +212,8 @@ export default function SettingsPanel() {
               <div className="relative flex-1">
                 <input
                   type={showPsk ? 'text' : 'password'}
-                  value={settings.psk}
-                  onChange={(e) => setSettings({ ...settings, psk: e.target.value })}
+                  value={settings.tls.psk}
+                  onChange={(e) => setSettings({ ...settings, tls: { psk: e.target.value } })}
                   className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white pr-10"
                   placeholder="Enter secure PSK..."
                 />
@@ -226,11 +247,14 @@ export default function SettingsPanel() {
             </label>
             <input
               type="text"
-              value={settings.hotkeys.focusReturn}
+              value={settings.hotkeys?.focus_return || ''}
               onChange={(e) =>
                 setSettings({
                   ...settings,
-                  hotkeys: { ...settings.hotkeys, focusReturn: e.target.value },
+                  hotkeys: {
+                    focus_return: e.target.value || null,
+                    kill_switch: settings.hotkeys?.kill_switch || null
+                  },
                 })
               }
               className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
@@ -247,11 +271,14 @@ export default function SettingsPanel() {
             </label>
             <input
               type="text"
-              value={settings.hotkeys.killSwitch}
+              value={settings.hotkeys?.kill_switch || ''}
               onChange={(e) =>
                 setSettings({
                   ...settings,
-                  hotkeys: { ...settings.hotkeys, killSwitch: e.target.value },
+                  hotkeys: {
+                    focus_return: settings.hotkeys?.focus_return || null,
+                    kill_switch: e.target.value || null
+                  },
                 })
               }
               className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
@@ -285,20 +312,21 @@ export default function SettingsPanel() {
                 type="range"
                 min="1"
                 max="50"
-                value={settings.behavior.edgeThreshold}
+                value={settings.behavior?.edge_threshold_px || 10}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
                     behavior: {
-                      ...settings.behavior,
-                      edgeThreshold: parseInt(e.target.value),
+                      edge_threshold_px: parseInt(e.target.value),
+                      friction_ms: settings.behavior?.friction_ms || null,
+                      reconnect_delay_ms: settings.behavior?.reconnect_delay_ms || null,
                     },
                   })
                 }
                 className="flex-1"
               />
               <span className="text-white font-mono w-12 text-right">
-                {settings.behavior.edgeThreshold}px
+                {settings.behavior?.edge_threshold_px || 10}px
               </span>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -316,20 +344,21 @@ export default function SettingsPanel() {
                 min="0"
                 max="500"
                 step="50"
-                value={settings.behavior.friction}
+                value={settings.behavior?.friction_ms || 100}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
                     behavior: {
-                      ...settings.behavior,
-                      friction: parseInt(e.target.value),
+                      edge_threshold_px: settings.behavior?.edge_threshold_px || null,
+                      friction_ms: parseInt(e.target.value),
+                      reconnect_delay_ms: settings.behavior?.reconnect_delay_ms || null,
                     },
                   })
                 }
                 className="flex-1"
               />
               <span className="text-white font-mono w-12 text-right">
-                {settings.behavior.friction}ms
+                {settings.behavior?.friction_ms || 100}ms
               </span>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -347,101 +376,26 @@ export default function SettingsPanel() {
                 min="1000"
                 max="30000"
                 step="1000"
-                value={settings.behavior.reconnectDelay}
+                value={settings.behavior?.reconnect_delay_ms || 5000}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
                     behavior: {
-                      ...settings.behavior,
-                      reconnectDelay: parseInt(e.target.value),
+                      edge_threshold_px: settings.behavior?.edge_threshold_px || null,
+                      friction_ms: settings.behavior?.friction_ms || null,
+                      reconnect_delay_ms: parseInt(e.target.value),
                     },
                   })
                 }
                 className="flex-1"
               />
               <span className="text-white font-mono w-16 text-right">
-                {(settings.behavior.reconnectDelay / 1000).toFixed(1)}s
+                {((settings.behavior?.reconnect_delay_ms || 5000) / 1000).toFixed(1)}s
               </span>
             </div>
             <p className="text-xs text-gray-500 mt-1">
               Wait time before attempting to reconnect after disconnection
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Features Tab */}
-      {activeTab === 'features' && (
-        <div className="space-y-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-white">mDNS Auto-Discovery</h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  Automatically discover other MultiShiva instances on the network
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.features.mdnsDiscovery}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      features: {
-                        ...settings.features,
-                        mdnsDiscovery: e.target.checked,
-                      },
-                    })
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-white">Clipboard Synchronization</h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  Share clipboard content across connected machines
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.features.clipboardSync}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      features: {
-                        ...settings.features,
-                        clipboardSync: e.target.checked,
-                      },
-                    })
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-          </div>
-
-          <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mt-4">
-            <h3 className="text-sm font-semibold text-blue-400 mb-2">Feature Info</h3>
-            <ul className="text-xs text-gray-300 space-y-1">
-              <li>
-                • <strong>mDNS:</strong> Uses Multicast DNS for zero-config discovery
-              </li>
-              <li>
-                • <strong>Clipboard:</strong> Polls every 500ms for changes
-              </li>
-              <li>
-                • All features can be toggled without restarting
-              </li>
-            </ul>
           </div>
         </div>
       )}

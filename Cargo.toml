@@ -1,6 +1,6 @@
 [package]
 name = "multishiva"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["yrbane"]
 description = "Control multiple computers with one keyboard and mouse over LAN"

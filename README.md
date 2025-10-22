@@ -17,7 +17,9 @@
 - 🔄 **Contrôle bidirectionnel** - Transfert automatique du focus dans les deux sens
 - 🔒 **Device Grabbing (Linux)** - Blocage intelligent de l'input local avec evdev
 - 🐧 **Support Wayland natif** - Compatible X11 et Wayland via evdev
-- 🧩 **Interface graphique intuitive** - Positionnez vos machines par glisser-déposer
+- 🎨 **Interface graphique complète** - Configuration visuelle avec drag & drop (comme GNOME display settings)
+- 🖼️ **Éditeur de topologie** - Positionnez vos machines visuellement et créez des connexions
+- 📊 **Monitoring temps réel** - StatusBar avec statistiques réseau et état des connexions
 - 🔐 **Sécurité TLS + PSK** - Chiffrement et authentification par clé pré-partagée
 - 🌐 **Auto-découverte mDNS** - Détection automatique des machines sur le réseau
 - 🔄 **Reconnexion automatique** - Résilient aux coupures réseau
@@ -74,15 +76,81 @@ cp multishiva-agent.yml.example multishiva-agent.yml
 RUST_LOG=info cargo run -- --simulate
 ```
 
-#### Interface graphique (à venir v1.0)
+#### Interface graphique (disponible depuis v1.2.0)
 
 ```bash
-multishiva --gui
+# Mode développement avec hot-reload
+cargo tauri dev
+
+# Build production
+cargo tauri build
+
+# Lancer l'interface après build
+./target/release/multishiva-gui
 ```
 
 ---
 
-## ⚙️ Configuration
+## 🎨 Interface graphique
+
+### Lancement
+
+```bash
+# Mode développement (recommandé pour débuter)
+cargo tauri dev
+
+# Build production (crée un exécutable optimisé)
+cargo tauri build
+```
+
+### Fonctionnalités de l'interface
+
+#### 📐 Onglet Topology - Éditeur visuel
+- **Drag & drop** : Déplacez les machines sur le canvas pour définir leur position relative
+- **Ajouter des machines** : Bouton "+ Add Machine" pour créer de nouveaux agents
+- **Créer des connexions** :
+  1. Sélectionnez une machine source
+  2. Cliquez sur "Connect"
+  3. Choisissez la machine cible et le bord (Left/Right/Top/Bottom)
+- **Design** :
+  - Host = Gradient violet/indigo
+  - Agents = Gradient bleu/cyan
+  - Connexions = Flèches directionnelles bleues animées
+- **Résumé temps réel** : Affichage du nombre de machines et connexions
+
+#### ⚙️ Onglet Settings - Configuration
+- **General** :
+  - Nom de la machine (self_name)
+  - Mode (Host ou Agent)
+  - Port réseau
+  - Adresse du host (mode agent uniquement)
+  - PSK (Pre-Shared Key) avec générateur automatique
+- **Hotkeys** :
+  - Focus Return (retour au host)
+  - Kill Switch (arrêt d'urgence)
+- **Behavior** :
+  - Edge Threshold (distance du bord en pixels)
+  - Friction (délai avant transition en ms)
+  - Reconnect Delay (délai de reconnexion en ms)
+
+#### 📊 StatusBar - Monitoring
+- **Statut de connexion** : Indicateur visuel (vert = connecté, rouge = déconnecté)
+- **Mode actuel** : HOST ou AGENT
+- **Machines connectées** : Nombre d'agents en ligne
+- **Événements/s** : Débit en temps réel
+- **Statistiques réseau** : Bytes envoyés/reçus
+- **Features actives** : mDNS, Clipboard Sync
+- **Détails extensibles** : Cliquez pour voir plus d'infos (latence, CPU, etc.)
+
+### Sauvegarde de la configuration
+
+La configuration est automatiquement chargée depuis `~/.config/multishiva/multishiva.yml` au démarrage.
+
+Utilisez le bouton **Save** pour persister vos modifications. Le chemin du fichier de config est affiché en haut du panneau Settings.
+
+---
+
+## ⚙️ Configuration (manuelle)
 
 ### Exemple de configuration Host
 
@@ -319,9 +387,10 @@ Consultez [IDEA.md](IDEA.md) pour le concept complet et les spécifications dét
 | v0.3    | ✅   | Logging avec rotation, stabilité - **41 tests** |
 | **v1.0**    | ✅   | **Interface Tauri, mDNS, Clipboard, Keyring, GUI complète - 60 tests** |
 | **v1.1**    | ✅   | **Support evdev/Wayland, Device grabbing, Contrôle bidirectionnel - 60+ tests** |
-| v1.2    | 📋   | Multi-écrans avancé par machine       |
-| v1.3    | 📋   | Transfert de fichiers                |
-| v1.4    | 📋   | Profils de configuration multiples    |
+| **v1.2**    | ✅   | **Interface GUI complète avec éditeur visuel de topologie - 60+ tests** |
+| v1.3    | 📋   | Multi-écrans avancé par machine       |
+| v1.4    | 📋   | Transfert de fichiers                |
+| v1.5    | 📋   | Profils de configuration multiples    |
 | v2.0    | 💡   | Application mobile compagnon          |
 
 ---
