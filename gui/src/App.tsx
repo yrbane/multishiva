@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import './App.css'
 import MachineGrid from './components/MachineGrid'
 import SettingsPanel from './components/SettingsPanel'
 import StatusBar from './components/StatusBar'
