@@ -412,16 +412,39 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
                         if let Some(edge_name) = edge {
                             if let Some(neighbor) = config.edges.get(edge_name) {
                                 tracing::info!(
-                                    "🚀 Edge crossed! Transferring focus to '{}'",
-                                    neighbor
+                                    "🚀 Edge crossed! Transferring focus to '{}' via {} edge",
+                                    neighbor,
+                                    edge_name
                                 );
 
-                                // Send FocusGrant event
+                                // Calculate entry position on agent (opposite edge)
+                                // If we exit left (x≈0), we should enter right (x≈screen_width)
+                                // If we exit right (x≈screen_width), we should enter left (x≈0)
+                                // If we exit top (y≈0), we should enter bottom (y≈screen_height)
+                                // If we exit bottom (y≈screen_height), we should enter top (y≈0)
+                                // For now, assume agent has same screen size as host
+                                let (entry_x, entry_y) = match edge_name {
+                                    "left" => (screen_size.0 as i32 - edge_threshold - 1, *y),
+                                    "right" => (edge_threshold, *y),
+                                    "top" => (*x, screen_size.1 as i32 - edge_threshold - 1),
+                                    "bottom" => (*x, edge_threshold),
+                                    _ => (*x, *y),
+                                };
+
+                                tracing::debug!(
+                                    "Exit position: ({}, {}), Entry position on agent: ({}, {})",
+                                    x,
+                                    y,
+                                    entry_x,
+                                    entry_y
+                                );
+
+                                // Send FocusGrant event with entry position
                                 use multishiva::core::events::Event;
                                 let focus_event = Event::FocusGrant {
                                     target: neighbor.clone(),
-                                    x: *x,
-                                    y: *y,
+                                    x: entry_x,
+                                    y: entry_y,
                                 };
 
                                 if let Err(e) = network.send_event(focus_event).await {
@@ -532,16 +555,27 @@ async fn run_agent_mode(
                 tracing::debug!("Received event from host: {:?}", event);
 
                 // Check if we're receiving focus
-                if matches!(event, multishiva::core::events::Event::FocusGrant { .. }) {
-                    tracing::info!("▶ Received focus from host");
+                if let multishiva::core::events::Event::FocusGrant { target: _, x, y } = event {
+                    tracing::info!("▶ Received focus from host at position ({}, {})", x, y);
                     has_focus = true;
+
+                    // FocusGrant is not directly injectable, so we convert it to a MouseMove
+                    let move_event = multishiva::core::events::Event::MouseMove { x, y };
+                    if let Err(e) = input_handler.inject_event(move_event).await {
+                        tracing::error!("Failed to position cursor: {}", e);
+                    } else {
+                        tracing::info!("✓ Cursor positioned at ({}, {})", x, y);
+                    }
+                    continue;
                 }
 
-                // Inject event locally
-                if let Err(e) = input_handler.inject_event(event.clone()).await {
-                    tracing::error!("Failed to inject event: {}", e);
-                } else {
-                    tracing::trace!("✓ Event injected: {:?}", event);
+                // Inject event locally (skip FocusRelease and Heartbeat as they're not injectable)
+                if !matches!(event, multishiva::core::events::Event::FocusRelease | multishiva::core::events::Event::Heartbeat) {
+                    if let Err(e) = input_handler.inject_event(event.clone()).await {
+                        tracing::error!("Failed to inject event: {}", e);
+                    } else {
+                        tracing::trace!("✓ Event injected: {:?}", event);
+                    }
                 }
             }
             Some(local_event) = local_event_rx.recv() => {
