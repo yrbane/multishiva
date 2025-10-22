@@ -130,6 +130,7 @@ impl Network {
         let running = self.running.clone();
         let connection_count = self.connection_count.clone();
         let psk = self.psk.clone();
+        let event_rx = self.event_rx.clone();
 
         // Spawn host listener task
         tokio::spawn(async move {
@@ -143,9 +144,10 @@ impl Network {
 
                         let psk = psk.clone();
                         let connection_count = connection_count.clone();
+                        let event_rx = event_rx.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client(stream, psk).await {
+                            if let Err(e) = handle_client(stream, psk, event_rx).await {
                                 tracing::error!("Client handler error: {}", e);
                             }
                             connection_count.fetch_sub(1, Ordering::SeqCst);
@@ -250,10 +252,11 @@ impl Network {
 
         let connected = self.connected.clone();
         let psk = self.psk.clone();
+        let event_tx = self.event_tx.clone();
 
         // Spawn connection handler
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, psk, connected.clone()).await {
+            if let Err(e) = handle_connection(stream, psk, connected.clone(), event_tx).await {
                 tracing::error!("Connection handler error: {}", e);
             }
             connected.store(false, Ordering::SeqCst);
@@ -492,7 +495,11 @@ fn compute_psk_hash(psk: &str) -> String {
     hex::encode(result)
 }
 
-async fn handle_client(mut stream: TcpStream, psk: String) -> Result<()> {
+async fn handle_client(
+    mut stream: TcpStream,
+    psk: String,
+    event_rx: Arc<RwLock<Option<mpsc::Receiver<Event>>>>,
+) -> Result<()> {
     // Perform PSK handshake and get machine name
     let machine_name = match perform_psk_handshake(&mut stream, &psk, true).await {
         Ok(name) => name,
@@ -502,29 +509,157 @@ async fn handle_client(mut stream: TcpStream, psk: String) -> Result<()> {
         }
     };
 
-    tracing::info!("Client {} authenticated successfully", machine_name);
+    tracing::info!("✓ Client '{}' authenticated successfully", machine_name);
 
-    // Note: fingerprint verification would happen here in a full implementation
-    // For now, we just log the successful authentication
+    // Split stream for concurrent read/write (takes ownership)
+    let (mut read_half, mut write_half) = stream.into_split();
 
-    // Keep connection alive and handle events
-    loop {
-        // TODO: Read and handle events
-        sleep(Duration::from_secs(1)).await;
+    // Spawn task to send events from channel to client
+    let send_task = tokio::spawn(async move {
+        let mut rx_guard = event_rx.write().await;
+        if let Some(rx) = rx_guard.as_mut() {
+            while let Some(event) = rx.recv().await {
+                tracing::debug!("Sending event to client: {:?}", event);
+
+                // Serialize event using MessagePack
+                match rmp_serde::to_vec(&event) {
+                    Ok(data) => {
+                        // Send length prefix (4 bytes) + data
+                        let len = data.len() as u32;
+                        if write_half.write_all(&len.to_be_bytes()).await.is_err() {
+                            tracing::warn!("Failed to write event length, client disconnected");
+                            break;
+                        }
+                        if write_half.write_all(&data).await.is_err() {
+                            tracing::warn!("Failed to write event data, client disconnected");
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to serialize event: {}", e);
+                    }
+                }
+            }
+        }
+        tracing::info!("Send task ending for client");
+    });
+
+    // Receive heartbeats from client
+    let receive_task = tokio::spawn(async move {
+        let mut heartbeat_buf = [0u8; 4];
+        loop {
+            match tokio::time::timeout(
+                Duration::from_secs(15),
+                read_half.read_exact(&mut heartbeat_buf),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    tracing::trace!("Received heartbeat from client");
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("Client disconnected: {}", e);
+                    break;
+                }
+                Err(_) => {
+                    tracing::warn!("Client heartbeat timeout");
+                    break;
+                }
+            }
+        }
+        tracing::info!("Receive task ending for client");
+    });
+
+    // Wait for either task to complete
+    tokio::select! {
+        _ = send_task => {}
+        _ = receive_task => {}
     }
+
+    Ok(())
 }
 
 async fn handle_connection(
-    mut _stream: TcpStream,
+    stream: TcpStream,
     _psk: String,
     connected: Arc<AtomicBool>,
+    event_tx: Arc<RwLock<Option<mpsc::Sender<Event>>>>,
 ) -> Result<()> {
-    // Heartbeat loop
-    while connected.load(Ordering::SeqCst) {
-        sleep(HEARTBEAT_INTERVAL).await;
-        // TODO: Send heartbeat
+    tracing::info!("Agent connected to host, receiving events...");
+
+    // Split stream for concurrent read/write (takes ownership)
+    let (mut read_half, mut write_half) = stream.into_split();
+
+    // Clone connected for heartbeat task
+    let connected_heartbeat = connected.clone();
+
+    // Spawn heartbeat task
+    let heartbeat_task = tokio::spawn(async move {
+        while connected_heartbeat.load(Ordering::SeqCst) {
+            // Send heartbeat (4 zero bytes)
+            if write_half.write_all(&[0u8; 4]).await.is_err() {
+                tracing::warn!("Failed to send heartbeat, disconnected");
+                break;
+            }
+            sleep(HEARTBEAT_INTERVAL).await;
+        }
+        tracing::debug!("Heartbeat task ending");
+    });
+
+    // Receive events from host
+    let receive_task = tokio::spawn(async move {
+        let tx_guard = event_tx.read().await;
+        if let Some(tx) = tx_guard.as_ref() {
+            loop {
+                // Read length prefix (4 bytes)
+                let mut len_buf = [0u8; 4];
+                match read_half.read_exact(&mut len_buf).await {
+                    Ok(_) => {
+                        let len = u32::from_be_bytes(len_buf) as usize;
+
+                        // Read event data
+                        let mut data = vec![0u8; len];
+                        match read_half.read_exact(&mut data).await {
+                            Ok(_) => {
+                                // Deserialize event
+                                match rmp_serde::from_slice::<Event>(&data) {
+                                    Ok(event) => {
+                                        tracing::debug!("Received event from host: {:?}", event);
+                                        if tx.send(event).await.is_err() {
+                                            tracing::warn!(
+                                                "Failed to forward event, channel closed"
+                                            );
+                                            break;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to deserialize event: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to read event data: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to read event length: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+        tracing::info!("Receive task ending");
+    });
+
+    // Wait for either task to complete
+    tokio::select! {
+        _ = heartbeat_task => {}
+        _ = receive_task => {}
     }
 
+    connected.store(false, Ordering::SeqCst);
     Ok(())
 }
 

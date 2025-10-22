@@ -312,9 +312,16 @@ impl InputHandler for RdevInputHandler {
             };
 
             // Start listening (this blocks)
-            if let Err(e) = rdev::listen(callback) {
-                tracing::error!("Failed to listen for events: {:?}", e);
+            tracing::debug!("Calling rdev::listen()...");
+            match rdev::listen(callback) {
+                Ok(_) => {
+                    tracing::info!("rdev::listen() returned (should never happen)");
+                }
+                Err(e) => {
+                    tracing::error!("rdev::listen() failed: {:?}", e);
+                }
             }
+            tracing::debug!("rdev listen thread exiting");
         });
 
         // Spawn async task to forward events from std channel to tokio channel

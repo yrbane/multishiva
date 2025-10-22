@@ -19,6 +19,10 @@ pub mod focus;
 /// Input capture and injection (keyboard/mouse)
 pub mod input;
 
+/// Linux-specific input handling via evdev (Wayland/X11 support)
+#[cfg(target_os = "linux")]
+pub mod input_evdev;
+
 /// Secure credential storage using system keyring
 pub mod keyring;
 

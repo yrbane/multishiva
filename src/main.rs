@@ -273,7 +273,7 @@ async fn run_production_mode(config: Config, _topology: Topology) -> Result<()> 
 
 async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
     use multishiva::core::discovery::Discovery;
-    use multishiva::core::input::{InputHandler, RdevInputHandler};
+    use multishiva::core::input::InputHandler;
     use std::collections::HashMap;
 
     tracing::info!("Starting as HOST on port {}", config.port);
@@ -295,8 +295,20 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
         tracing::info!("🔗 Topology: {} at edge {}", neighbor_name, edge_name);
     }
 
-    // Start input capture
-    let mut input_handler = RdevInputHandler::new();
+    // Start input capture - use evdev on Linux for Wayland/X11 support
+    #[cfg(target_os = "linux")]
+    let mut input_handler = {
+        use multishiva::core::input_evdev::EvdevInputHandler;
+        tracing::info!("Using native evdev backend (Wayland/X11 compatible)");
+        EvdevInputHandler::new()?
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let mut input_handler = {
+        use multishiva::core::input::RdevInputHandler;
+        tracing::info!("Using rdev backend");
+        RdevInputHandler::new()
+    };
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
     tracing::info!("🖱️  Starting mouse/keyboard capture...");
@@ -317,15 +329,39 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
     tracing::info!("Waiting for agents to connect...");
     tracing::info!("Press Ctrl+C to exit");
 
+    // Track which machine has focus (None = local, Some(name) = remote)
+    let mut focus_target: Option<String> = None;
+
     // Event processing loop
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
 
+    let mut event_count = 0u64;
     loop {
         tokio::select! {
             Some(event) = event_rx.recv() => {
+                event_count += 1;
+
+                // If focus is on remote machine, send ALL events there
+                if let Some(ref target) = focus_target {
+                    tracing::trace!("Forwarding event to {}: {:?}", target, event);
+                    if let Err(e) = network.send_event(event).await {
+                        tracing::error!("Failed to send event to {}: {}", target, e);
+                    }
+                    continue; // Don't process locally
+                }
+
+                // Process events locally when we have focus
                 // Log mouse movement for debugging
                 if let multishiva::core::events::Event::MouseMove { x, y } = &event {
+                    // Log every 100th event to see if we're receiving them
+                    if event_count % 100 == 0 {
+                        tracing::info!("📊 Received {} events. Current mouse: ({}, {})", event_count, x, y);
+                    }
+
+                    // Log ALL mouse movements temporarily to debug
+                    tracing::trace!("Mouse position: ({}, {})", x, y);
+
                     // Check edge proximity
                     let threshold = edge_threshold;
                     let at_left = *x < threshold;
@@ -333,10 +369,16 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
                     let at_top = *y < threshold;
                     let at_bottom = *y > (screen_size.1 as i32 - threshold);
 
+                    // DEBUG: Log the actual check values
+                    if *x < 50 || *x > 1870 {
+                        tracing::warn!("🔍 DEBUG: x={}, threshold={}, at_left={} (x < {}), at_right={} (x > {})",
+                            x, threshold, at_left, threshold, at_right, screen_size.0 as i32 - threshold);
+                    }
+
                     if at_left || at_right || at_top || at_bottom {
-                        tracing::debug!(
-                            "🖱️  Mouse near edge at ({:.0}, {:.0}) - Left:{} Right:{} Top:{} Bottom:{}",
-                            x, y, at_left, at_right, at_top, at_bottom
+                        tracing::info!(
+                            "🖱️  Mouse near edge at ({}, {}) - Left:{} Right:{} Top:{} Bottom:{} (screen: {}x{}, threshold: {})",
+                            x, y, at_left, at_right, at_top, at_bottom, screen_size.0, screen_size.1, threshold
                         );
 
                         // Check if there's a neighbor on this edge
@@ -355,10 +397,25 @@ async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
                         if let Some(edge_name) = edge {
                             if let Some(neighbor) = config.edges.get(edge_name) {
                                 tracing::info!(
-                                    "🚀 Edge crossed! Transferring to '{}' on {} edge",
-                                    neighbor, edge_name
+                                    "🚀 Edge crossed! Transferring focus to '{}'",
+                                    neighbor
                                 );
-                                // TODO: Send focus transfer event via network
+
+                                // Send FocusGrant event
+                                use multishiva::core::events::Event;
+                                let focus_event = Event::FocusGrant {
+                                    target: neighbor.clone(),
+                                    x: *x,
+                                    y: *y,
+                                };
+
+                                if let Err(e) = network.send_event(focus_event).await {
+                                    tracing::error!("Failed to send FocusGrant: {}", e);
+                                } else {
+                                    // Transfer focus to remote machine
+                                    focus_target = Some(neighbor.clone());
+                                    tracing::info!("✓ Focus transferred to '{}'", neighbor);
+                                }
                             } else {
                                 tracing::debug!("No neighbor configured on {} edge", edge_name);
                             }
@@ -386,6 +443,8 @@ async fn run_agent_mode(
     mut _focus: FocusManager,
     host_address: &str,
 ) -> Result<()> {
+    use multishiva::core::input::InputHandler;
+
     tracing::info!("Starting as AGENT, connecting to: {}", host_address);
 
     let mut network = Network::new(config.tls.psk.clone());
@@ -394,10 +453,46 @@ async fn run_agent_mode(
     network.connect_to_host(host_address).await?;
     tracing::info!("✓ Connected to host at {}", host_address);
 
-    tracing::info!("Press Ctrl+C to exit");
+    // Create input handler for event injection
+    let input_handler = {
+        #[cfg(target_os = "linux")]
+        {
+            use multishiva::core::input_evdev::EvdevInputHandler;
+            EvdevInputHandler::new()?
+        }
 
-    // Run until Ctrl+C
-    signal::ctrl_c().await?;
+        #[cfg(not(target_os = "linux"))]
+        {
+            use multishiva::core::input::RdevInputHandler;
+            RdevInputHandler::new()
+        }
+    };
+
+    tracing::info!("✓ Input injection ready");
+    tracing::info!("Waiting for events from host...");
+
+    // Event receiving loop
+    let ctrl_c = signal::ctrl_c();
+    tokio::pin!(ctrl_c);
+
+    loop {
+        tokio::select! {
+            Some(event) = network.receive_event() => {
+                tracing::debug!("Received event from host: {:?}", event);
+
+                // Inject event locally
+                if let Err(e) = input_handler.inject_event(event.clone()).await {
+                    tracing::error!("Failed to inject event: {}", e);
+                } else {
+                    tracing::trace!("✓ Event injected: {:?}", event);
+                }
+            }
+            _ = &mut ctrl_c => {
+                tracing::info!("Received Ctrl+C, stopping...");
+                break;
+            }
+        }
+    }
 
     tracing::info!("Agent stopping...");
     network.stop().await;
