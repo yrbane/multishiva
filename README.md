@@ -14,6 +14,9 @@
 ## 🌟 Fonctionnalités
 
 - 🖱️ **Partage clavier/souris multi-OS** - Contrôlez Linux, macOS et Windows depuis une seule machine
+- 🔄 **Contrôle bidirectionnel** - Transfert automatique du focus dans les deux sens
+- 🔒 **Device Grabbing (Linux)** - Blocage intelligent de l'input local avec evdev
+- 🐧 **Support Wayland natif** - Compatible X11 et Wayland via evdev
 - 🧩 **Interface graphique intuitive** - Positionnez vos machines par glisser-déposer
 - 🔐 **Sécurité TLS + PSK** - Chiffrement et authentification par clé pré-partagée
 - 🌐 **Auto-découverte mDNS** - Détection automatique des machines sur le réseau
@@ -139,14 +142,31 @@ behavior:
 Autorisez MultiShiva dans :
 **Préférences Système → Sécurité et confidentialité → Accessibilité**
 
-### Linux (X11)
+### Linux (Wayland/X11)
+
+MultiShiva utilise **evdev** pour un support natif de Wayland et X11 :
 
 ```bash
-# Installer les dépendances
-sudo apt-get install libx11-dev libxtst-dev
-
-# Ajouter votre utilisateur au groupe input (optionnel)
+# Ajouter votre utilisateur au groupe input (REQUIS pour evdev)
 sudo usermod -a -G input $USER
+
+# Déconnectez-vous puis reconnectez-vous pour appliquer les changements
+# Vérifiez l'appartenance au groupe :
+groups | grep input
+```
+
+**Fonctionnalités Linux :**
+- ✅ Support natif Wayland via evdev
+- ✅ Compatible X11
+- ✅ Device grabbing automatique (blocage input local quand focus distant)
+- ✅ Auto-détection des périphériques clavier/souris
+- ⚠️ Nécessite l'appartenance au groupe `input`
+
+**Alternative (non recommandé pour Wayland) :**
+```bash
+# Si vous utilisez X11 uniquement et préférez rdev :
+sudo apt-get install libx11-dev libxtst-dev
+# Note: rdev ne fonctionne pas sur Wayland
 ```
 
 ### Windows
@@ -205,21 +225,68 @@ multishiva --mode agent --simulate
 
 ---
 
+## 🔄 Fonctionnement du transfert de focus
+
+MultiShiva implémente un **contrôle bidirectionnel transparent** :
+
+### Transfert Host → Agent
+
+1. **Détection de bord** : Le host détecte quand la souris atteint un bord configuré (ex: bord gauche)
+2. **Device grabbing** : Sur Linux, les périphériques sont "grabés" via EVIOCGRAB pour bloquer l'OS local
+3. **Envoi FocusGrant** : Le host envoie l'événement `FocusGrant` à l'agent
+4. **Forward des events** : Tous les événements clavier/souris sont envoyés à l'agent via TCP/MessagePack
+5. **Injection distante** : L'agent injecte les événements sur sa machine locale
+
+### Retour Agent → Host
+
+1. **Détection locale** : L'agent monitore sa propre souris quand il a le focus
+2. **Edge opposé** : Quand la souris atteint le bord opposé (ex: bord droit), l'agent détecte le retour
+3. **Envoi FocusRelease** : L'agent envoie `FocusRelease` au host via le même canal TCP
+4. **Device ungrab** : Le host libère les périphériques sur Linux
+5. **Reprise locale** : Le host reprend le contrôle local
+
+### Exemple de flux
+
+```
+Linux (Host)                          Mac (Agent)
+     │                                     │
+     │  Mouse → Left Edge                 │
+     │  🔒 Grab devices                   │
+     ├─────── FocusGrant ─────────────────>│
+     │                                     │  ▶ Has focus
+     ├─────── MouseMove events ──────────>│  📍 Inject locally
+     ├─────── KeyPress events ───────────>│  ⌨️  Inject locally
+     │                                     │
+     │                                     │  Mouse → Right Edge
+     │  ◀ Lose focus                      │
+     │<────── FocusRelease ─────────────────┤
+     │  🔓 Ungrab devices                 │
+     │  📍 Resume local control           │
+```
+
+Cette architecture garantit qu'**un seul système traite les événements à la fois**, évitant les mouvements de curseur dupliqués.
+
+---
+
 ## 🏗️ Architecture
 
 ```
 multishiva/
 ├── src/
-│   ├── main.rs              # Point d'entrée
+│   ├── main.rs              # Point d'entrée, modes host/agent
 │   ├── cli.rs               # Interface CLI
 │   ├── app.rs               # Lancement GUI (Tauri)
 │   └── core/
 │       ├── config.rs        # Configuration YAML
-│       ├── network.rs       # Protocole TCP/TLS
-│       ├── input.rs         # Capture/injection I/O
-│       ├── topology.rs      # Mapping spatial
+│       ├── network.rs       # Protocole TCP/TLS bidirectionnel
+│       ├── input.rs         # Capture/injection I/O (rdev)
+│       ├── input_evdev.rs   # Handler Linux natif (Wayland/X11)
+│       ├── topology.rs      # Mapping spatial des machines
 │       ├── focus.rs         # Gestion du focus
-│       └── events.rs        # Types d'événements
+│       ├── events.rs        # Types d'événements (MouseMove, KeyPress, FocusGrant/Release)
+│       ├── discovery.rs     # Auto-découverte mDNS
+│       ├── clipboard.rs     # Synchronisation presse-papier
+│       └── keyring.rs       # Stockage sécurisé des clés
 ├── gui/
 │   └── src/
 │       ├── App.tsx
@@ -251,9 +318,10 @@ Consultez [IDEA.md](IDEA.md) pour le concept complet et les spécifications dét
 | v0.2    | ✅   | TLS fingerprint, permissions système - **34 tests** |
 | v0.3    | ✅   | Logging avec rotation, stabilité - **41 tests** |
 | **v1.0**    | ✅   | **Interface Tauri, mDNS, Clipboard, Keyring, GUI complète - 60 tests** |
-| v1.1    | 📋   | Multi-écrans avancé par machine       |
-| v1.2    | 📋   | Transfert de fichiers                |
-| v1.3    | 📋   | Profils de configuration multiples    |
+| **v1.1**    | ✅   | **Support evdev/Wayland, Device grabbing, Contrôle bidirectionnel - 60+ tests** |
+| v1.2    | 📋   | Multi-écrans avancé par machine       |
+| v1.3    | 📋   | Transfert de fichiers                |
+| v1.4    | 📋   | Profils de configuration multiples    |
 | v2.0    | 💡   | Application mobile compagnon          |
 
 ---
