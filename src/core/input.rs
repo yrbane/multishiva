@@ -280,19 +280,29 @@ impl InputHandler for RdevInputHandler {
 
         // Spawn capture thread (this runs rdev::listen which blocks)
         std::thread::spawn(move || {
+            tracing::debug!("rdev listen thread started");
             let callback = move |event: rdev::Event| {
                 if !capturing.load(Ordering::SeqCst) {
                     return;
                 }
 
+                tracing::trace!("rdev event received: {:?}", event.event_type);
+
                 // Convert rdev event to our Event type
                 let our_event = match convert_rdev_to_event(event.event_type) {
                     Some(e) => e,
-                    None => return,
+                    None => {
+                        tracing::trace!("Event ignored (not converted)");
+                        return;
+                    }
                 };
 
+                tracing::trace!("Converted event: {:?}", our_event);
+
                 // Send through standard channel
-                let _ = std_tx.send(our_event);
+                if let Err(e) = std_tx.send(our_event) {
+                    tracing::error!("Failed to send event through channel: {:?}", e);
+                }
 
                 // Block local input if enabled
                 if block_local.load(Ordering::SeqCst) {
