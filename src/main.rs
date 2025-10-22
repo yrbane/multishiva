@@ -271,8 +271,9 @@ async fn run_production_mode(config: Config, _topology: Topology) -> Result<()> 
     }
 }
 
-async fn run_host_mode(config: Config, mut _focus: FocusManager) -> Result<()> {
+async fn run_host_mode(config: Config, _focus: FocusManager) -> Result<()> {
     use multishiva::core::discovery::Discovery;
+    use multishiva::core::input::{InputHandler, RdevInputHandler};
     use std::collections::HashMap;
 
     tracing::info!("Starting as HOST on port {}", config.port);
@@ -289,13 +290,91 @@ async fn run_host_mode(config: Config, mut _focus: FocusManager) -> Result<()> {
     discovery.register(actual_port, None, HashMap::new())?;
     tracing::info!("✓ Host registered on mDNS as '{}'", config.self_name);
 
+    // Log topology
+    for (edge_name, neighbor_name) in &config.edges {
+        tracing::info!("🔗 Topology: {} at edge {}", neighbor_name, edge_name);
+    }
+
+    // Start input capture
+    let mut input_handler = RdevInputHandler::new();
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
+
+    tracing::info!("🖱️  Starting mouse/keyboard capture...");
+    input_handler.start_capture(event_tx).await?;
+    tracing::info!("✓ Input capture started");
+
+    let screen_size = input_handler.get_screen_size();
+    tracing::info!("📺 Screen size: {}x{}", screen_size.0, screen_size.1);
+
+    // Get edge threshold from config or use default
+    let edge_threshold = config
+        .behavior
+        .as_ref()
+        .and_then(|b| b.edge_threshold_px)
+        .unwrap_or(10) as i32;
+    tracing::info!("🎯 Edge threshold: {} pixels", edge_threshold);
+
     tracing::info!("Waiting for agents to connect...");
     tracing::info!("Press Ctrl+C to exit");
 
-    // Run until Ctrl+C
-    signal::ctrl_c().await?;
+    // Event processing loop
+    let ctrl_c = signal::ctrl_c();
+    tokio::pin!(ctrl_c);
+
+    loop {
+        tokio::select! {
+            Some(event) = event_rx.recv() => {
+                // Log mouse movement for debugging
+                if let multishiva::core::events::Event::MouseMove { x, y } = &event {
+                    // Check edge proximity
+                    let threshold = edge_threshold;
+                    let at_left = *x < threshold;
+                    let at_right = *x > (screen_size.0 as i32 - threshold);
+                    let at_top = *y < threshold;
+                    let at_bottom = *y > (screen_size.1 as i32 - threshold);
+
+                    if at_left || at_right || at_top || at_bottom {
+                        tracing::debug!(
+                            "🖱️  Mouse near edge at ({:.0}, {:.0}) - Left:{} Right:{} Top:{} Bottom:{}",
+                            x, y, at_left, at_right, at_top, at_bottom
+                        );
+
+                        // Check if there's a neighbor on this edge
+                        let edge = if at_left {
+                            Some("left")
+                        } else if at_right {
+                            Some("right")
+                        } else if at_top {
+                            Some("top")
+                        } else if at_bottom {
+                            Some("bottom")
+                        } else {
+                            None
+                        };
+
+                        if let Some(edge_name) = edge {
+                            if let Some(neighbor) = config.edges.get(edge_name) {
+                                tracing::info!(
+                                    "🚀 Edge crossed! Transferring to '{}' on {} edge",
+                                    neighbor, edge_name
+                                );
+                                // TODO: Send focus transfer event via network
+                            } else {
+                                tracing::debug!("No neighbor configured on {} edge", edge_name);
+                            }
+                        }
+                    }
+                }
+            }
+            _ = &mut ctrl_c => {
+                tracing::info!("Received Ctrl+C, stopping...");
+                break;
+            }
+        }
+    }
 
     tracing::info!("Host stopping...");
+    input_handler.stop_capture().await;
     network.stop().await;
     tracing::info!("Host stopped");
 
